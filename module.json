@@ -4,7 +4,15 @@
   "version": "1.0.0",
   "agent": {
     "description": "Manages price lists and pricing rules: create and maintain price lists, set item prices, define discount or surcharge rules, and compute the final price for a customer.",
-    "keywords": ["pricing", "price list", "discount", "surcharge", "tariff", "rule", "promotion"]
+    "keywords": [
+      "pricing",
+      "price list",
+      "discount",
+      "surcharge",
+      "tariff",
+      "rule",
+      "promotion"
+    ]
   },
   "depends_on": [],
   "permissions": [
@@ -43,24 +51,140 @@
     "pricing.price_lists.list": {
       "permission": "pricing.view_pricing",
       "sql": "queries/price_lists_list.sql",
-      "ai": { "description": "Lists all available price lists." }
+      "list": {
+        "search": [
+          "code",
+          "name"
+        ],
+        "sort": [
+          "id",
+          "code",
+          "name",
+          "currency",
+          "is_default",
+          "is_active",
+          "valid_from",
+          "valid_until",
+          "segment"
+        ],
+        "default_sort": "name",
+        "default_dir": "asc",
+        "filters": {
+          "code": {
+            "op": "eq"
+          },
+          "name": {
+            "op": "eq"
+          },
+          "currency": {
+            "op": "eq"
+          },
+          "is_default": {
+            "op": "eq"
+          },
+          "is_active": {
+            "op": "eq"
+          },
+          "valid_from": {
+            "op": "eq"
+          },
+          "valid_until": {
+            "op": "eq"
+          },
+          "segment": {
+            "op": "eq"
+          }
+        },
+        "page_size": 50
+      },
+      "ai": {
+        "description": "Lists all available price lists."
+      }
     },
     "pricing.price_lists.get": {
       "permission": "pricing.view_pricing",
       "sql": "queries/price_list_get.sql",
       "schema": "schemas/price_list_get.json",
-      "ai": { "description": "Retrieves the full detail of a specific price list." }
+      "ai": {
+        "description": "Retrieves the full detail of a specific price list."
+      }
     },
     "pricing.price_lists.items": {
       "permission": "pricing.view_pricing",
       "sql": "queries/price_list_items.sql",
       "schema": "schemas/price_list_items.json",
-      "ai": { "description": "Lists the products and their prices included in a price list." }
+      "ai": {
+        "description": "Lists the products and their prices included in a price list."
+      }
     },
     "pricing.rules.list": {
       "permission": "pricing.view_pricing",
       "sql": "queries/rules_list.sql",
-      "ai": { "description": "Lists active pricing rules including discounts, surcharges, and conditions." }
+      "list": {
+        "search": [
+          "code",
+          "name"
+        ],
+        "sort": [
+          "id",
+          "code",
+          "name",
+          "rule_type",
+          "value",
+          "min_amount",
+          "max_amount",
+          "applies_to",
+          "conditions",
+          "valid_from",
+          "valid_until",
+          "is_active",
+          "priority"
+        ],
+        "default_sort": "name",
+        "default_dir": "asc",
+        "filters": {
+          "code": {
+            "op": "eq"
+          },
+          "name": {
+            "op": "eq"
+          },
+          "rule_type": {
+            "op": "eq"
+          },
+          "value": {
+            "op": "range"
+          },
+          "min_amount": {
+            "op": "range"
+          },
+          "max_amount": {
+            "op": "range"
+          },
+          "applies_to": {
+            "op": "eq"
+          },
+          "conditions": {
+            "op": "eq"
+          },
+          "valid_from": {
+            "op": "eq"
+          },
+          "valid_until": {
+            "op": "eq"
+          },
+          "is_active": {
+            "op": "eq"
+          },
+          "priority": {
+            "op": "eq"
+          }
+        },
+        "page_size": 50
+      },
+      "ai": {
+        "description": "Lists active pricing rules including discounts, surcharges, and conditions."
+      }
     }
   },
   "commands": {
@@ -75,7 +199,9 @@
       "emit": [
         "pricing.price_list.created"
       ],
-      "ai": { "description": "Creates a new price list with a name, currency, and validity period." }
+      "ai": {
+        "description": "Creates a new price list with a name, currency, and validity period."
+      }
     },
     "pricing.price_lists.add_item": {
       "permission": "pricing.manage_pricing",
@@ -87,7 +213,9 @@
       "emit": [
         "pricing.price_item.added"
       ],
-      "ai": { "description": "Adds a product with its price to a price list." }
+      "ai": {
+        "description": "Adds a product with its price to a price list."
+      }
     },
     "pricing.rules.create": {
       "permission": "pricing.manage_pricing",
@@ -99,7 +227,9 @@
       "emit": [
         "pricing.rule.created"
       ],
-      "ai": { "description": "Creates a pricing rule (discount or surcharge) with its application conditions." }
+      "ai": {
+        "description": "Creates a pricing rule (discount or surcharge) with its application conditions."
+      }
     },
     "pricing.rules.deactivate": {
       "permission": "pricing.manage_pricing",
@@ -111,7 +241,9 @@
       "emit": [
         "pricing.rule.deactivated"
       ],
-      "ai": { "description": "Deactivates a pricing rule so it is no longer applied." }
+      "ai": {
+        "description": "Deactivates a pricing rule so it is no longer applied."
+      }
     },
     "pricing.price_lists.get_price": {
       "permission": "pricing.apply_pricing",
@@ -121,7 +253,9 @@
         "file": "dist/handler.wasm",
         "function": "get_price"
       },
-      "ai": { "description": "Calculates the final price of a product for a given customer and price list." }
+      "ai": {
+        "description": "Calculates the final price of a product for a given customer and price list."
+      }
     },
     "pricing.rules.calculate_discount": {
       "permission": "pricing.apply_pricing",
@@ -131,7 +265,9 @@
         "file": "dist/handler.wasm",
         "function": "calculate_discount"
       },
-      "ai": { "description": "Calculates the applicable discount for a product based on the active pricing rules." }
+      "ai": {
+        "description": "Calculates the applicable discount for a product based on the active pricing rules."
+      }
     },
     "pricing._unset_default": {
       "permission": "pricing.manage_pricing",

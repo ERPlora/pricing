@@ -2,7 +2,7 @@
 -- Modelos: PriceList, PriceListItem, DiscountRule.
 -- Listas de precios con scope por divisa/segmento + items por producto y bracket
 -- de cantidad; reglas de descuento evaluadas por prioridad sobre un importe.
--- Contrato de fila estándar de hub-next (§2.5): hub_id + soft-delete + auditoría.
+-- Contrato de fila estándar de hub (§2.5): hub_id + soft-delete + auditoría.
 
 -- Lista de precios (scope por hub, opcionalmente por segmento).
 CREATE TABLE IF NOT EXISTS pricing_price_list (
