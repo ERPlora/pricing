@@ -1,8 +1,16 @@
--- Pricing · esquema inicial (SQLite). Portado fielmente de old_modules/m_pricing/models.py.
--- Modelos: PriceList, PriceListItem, DiscountRule.
--- Listas de precios con scope por divisa/segmento + items por producto y bracket
--- de cantidad; reglas de descuento evaluadas por prioridad sobre un importe.
--- Contrato de fila estándar de hub (§2.5): hub_id + soft-delete + auditoría.
+-- Pricing · esquema inicial (Postgres / Aurora cloud). Equivalente a
+-- migrations/sqlite/001_init.sql — mismas tablas, índices, FK y contrato de
+-- fila estándar del hub (§2.5): hub_id + soft-delete + auditoría.
+--
+-- Criterio de tipos (paridad SQLite↔Postgres, los commands/queries SQL son COMPARTIDOS):
+--   * flags 0/1 → INTEGER (no BOOLEAN: los commands bindean 0/1 y Postgres no castea
+--     entero→boolean implícitamente en INSERT/UPDATE);
+--   * *_at de auditoría → TIMESTAMPTZ (el runtime bindea :now como string RFC3339, casteable);
+--   * valid_from/valid_until → TEXT ISO YYYY-MM-DD (los filtros `eq` de las queries bindean
+--     string; TEXT garantiza el mismo comportamiento que SQLite y compara lexicográficamente);
+--   * importes/cantidades → NUMERIC(15,4) (WASM-TODO.md §5: el motor de pricing usa
+--     aritmética decimal exacta y el resultado debe coincidir byte a byte entre dialectos);
+--   * ids/refs → TEXT (UUIDs del runtime como texto).
 
 -- Lista de precios (scope por hub, opcionalmente por segmento).
 CREATE TABLE IF NOT EXISTS pricing_price_list (
@@ -17,11 +25,11 @@ CREATE TABLE IF NOT EXISTS pricing_price_list (
     valid_until  TEXT,                        -- ISO YYYY-MM-DD
     segment      TEXT,                        -- NULL = cualquier segmento; si no: customer|business|wholesale|retail
     is_deleted   INTEGER NOT NULL DEFAULT 0,
-    deleted_at   TEXT,
+    deleted_at   TIMESTAMPTZ,
     created_by   TEXT,
     updated_by   TEXT,
-    created_at   TEXT,
-    updated_at   TEXT
+    created_at   TIMESTAMPTZ,
+    updated_at   TIMESTAMPTZ
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_pricing_list_hub_code     ON pricing_price_list (hub_id, code);
 CREATE INDEX        IF NOT EXISTS ix_pricing_list_hub_active   ON pricing_price_list (hub_id, is_active);
@@ -38,11 +46,11 @@ CREATE TABLE IF NOT EXISTS pricing_price_list_item (
     min_quantity  NUMERIC(15,4) NOT NULL DEFAULT 1,
     max_quantity  NUMERIC(15,4),
     is_deleted    INTEGER NOT NULL DEFAULT 0,
-    deleted_at    TEXT,
+    deleted_at    TIMESTAMPTZ,
     created_by    TEXT,
     updated_by    TEXT,
-    created_at    TEXT,
-    updated_at    TEXT,
+    created_at    TIMESTAMPTZ,
+    updated_at    TIMESTAMPTZ,
     FOREIGN KEY (price_list_id) REFERENCES pricing_price_list (id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS ix_pricing_item_hub_list_product ON pricing_price_list_item (hub_id, price_list_id, product_ref);
@@ -65,11 +73,11 @@ CREATE TABLE IF NOT EXISTS pricing_discount_rule (
     is_active    INTEGER NOT NULL DEFAULT 1,
     priority     INTEGER NOT NULL DEFAULT 100,        -- menor = se aplica antes
     is_deleted   INTEGER NOT NULL DEFAULT 0,
-    deleted_at   TEXT,
+    deleted_at   TIMESTAMPTZ,
     created_by   TEXT,
     updated_by   TEXT,
-    created_at   TEXT,
-    updated_at   TEXT
+    created_at   TIMESTAMPTZ,
+    updated_at   TIMESTAMPTZ
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_pricing_rule_hub_code            ON pricing_discount_rule (hub_id, code);
 CREATE INDEX        IF NOT EXISTS ix_pricing_rule_hub_active_priority ON pricing_discount_rule (hub_id, is_active, priority);
