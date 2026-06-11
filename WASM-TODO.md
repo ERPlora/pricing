@@ -1,5 +1,15 @@
 # pricing — lógica para handler Rust→WASM (Tier 2)
 
+> **Estado 2026-06-11 (issue pricing#1):** el crate `handler/` existe y compila a
+> `dist/handler.wasm` (`cargo build --release --target wasm32-unknown-unknown --features guest`
+> y copiar el .wasm a `dist/`). §1 `create_price_list` está **operativo E2E** (verificado contra
+> el runtime real con SQLite: flip atómico del default + INSERT vía `pricing._insert_price_list`
+> en la misma tx, `invalid_date`, duplicado parado por `uq_pricing_list_hub_code`). §2/§3 tienen
+> la lógica completa y verificada en el crate (`get_price_compute`/`calculate_discount_compute`),
+> pero sus exports devuelven `unsupported_readonly_handler`: el ABI actual del host NO entrega
+> lecturas pre-cargadas ni retorna el resultado de un handler read-only al caller (decisión de
+> core pendiente del humano — ver issue pricing#1 y architecture/modules/pricing.md).
+
 El CRUD plano (alta de
 lista, alta de item, alta/desactivación de regla) ya está en SQL declarativo Tier 0
 (`commands/*.sql`). Lo que sigue es el **motor de pricing**: cálculo de mejor precio,

@@ -274,6 +274,12 @@
       "sql": [
         "commands/_unset_default.sql"
       ]
+    },
+    "pricing._insert_price_list": {
+      "permission": "pricing.manage_pricing",
+      "sql": [
+        "commands/price_list_create.sql"
+      ]
     }
   },
   "ui": {
