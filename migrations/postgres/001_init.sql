@@ -5,7 +5,8 @@
 -- Criterio de tipos (paridad SQLite↔Postgres, los commands/queries SQL son COMPARTIDOS):
 --   * flags 0/1 → INTEGER (no BOOLEAN: los commands bindean 0/1 y Postgres no castea
 --     entero→boolean implícitamente en INSERT/UPDATE);
---   * *_at de auditoría → TIMESTAMPTZ (el runtime bindea :now como string RFC3339, casteable);
+--   * *_at de auditoría → TEXT ISO-8601 (ADR-0007: NO TIMESTAMPTZ — el runtime bindea :now como
+--     string ISO y la comparación lexicográfica de updated_at debe ser idéntica entre dialectos);
 --   * valid_from/valid_until → TEXT ISO YYYY-MM-DD (los filtros `eq` de las queries bindean
 --     string; TEXT garantiza el mismo comportamiento que SQLite y compara lexicográficamente);
 --   * importes/cantidades → NUMERIC(15,4) (WASM-TODO.md §5: el motor de pricing usa
@@ -25,11 +26,11 @@ CREATE TABLE IF NOT EXISTS pricing_price_list (
     valid_until  TEXT,                        -- ISO YYYY-MM-DD
     segment      TEXT,                        -- NULL = cualquier segmento; si no: customer|business|wholesale|retail
     is_deleted   INTEGER NOT NULL DEFAULT 0,
-    deleted_at   TIMESTAMPTZ,
+    deleted_at   TEXT       ,
     created_by   TEXT,
     updated_by   TEXT,
-    created_at   TIMESTAMPTZ,
-    updated_at   TIMESTAMPTZ
+    created_at   TEXT       ,
+    updated_at   TEXT       
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_pricing_list_hub_code     ON pricing_price_list (hub_id, code);
 CREATE INDEX        IF NOT EXISTS ix_pricing_list_hub_active   ON pricing_price_list (hub_id, is_active);
@@ -42,15 +43,15 @@ CREATE TABLE IF NOT EXISTS pricing_price_list_item (
     hub_id        TEXT NOT NULL,
     price_list_id TEXT NOT NULL,
     product_ref   TEXT NOT NULL,
-    price         NUMERIC(15,4) NOT NULL DEFAULT 0,
-    min_quantity  NUMERIC(15,4) NOT NULL DEFAULT 1,
-    max_quantity  NUMERIC(15,4),
+    price         INTEGER NOT NULL DEFAULT 0,        -- céntimos (ADR-0007; antes NUMERIC(15,4))
+    min_quantity  REAL NOT NULL DEFAULT 1,           -- cantidad fraccionable (no es dinero)
+    max_quantity  REAL,                          -- cantidad fraccionable
     is_deleted    INTEGER NOT NULL DEFAULT 0,
-    deleted_at    TIMESTAMPTZ,
+    deleted_at    TEXT       ,
     created_by    TEXT,
     updated_by    TEXT,
-    created_at    TIMESTAMPTZ,
-    updated_at    TIMESTAMPTZ,
+    created_at    TEXT       ,
+    updated_at    TEXT       ,
     FOREIGN KEY (price_list_id) REFERENCES pricing_price_list (id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS ix_pricing_item_hub_list_product ON pricing_price_list_item (hub_id, price_list_id, product_ref);
@@ -63,9 +64,9 @@ CREATE TABLE IF NOT EXISTS pricing_discount_rule (
     code         TEXT NOT NULL,
     name         TEXT NOT NULL,
     rule_type    TEXT NOT NULL DEFAULT 'percent',   -- percent|fixed|buy_x_get_y|tiered
-    value        NUMERIC(15,4) NOT NULL DEFAULT 0,
-    min_amount   NUMERIC(15,4),
-    max_amount   NUMERIC(15,4),
+    value        REAL NOT NULL DEFAULT 0,            -- % o euros (polimórfico por rule_type, no céntimos)
+    min_amount   INTEGER,                       -- céntimos
+    max_amount   INTEGER,                       -- céntimos
     applies_to   TEXT NOT NULL DEFAULT 'all',        -- all|customer_segment|product_category
     conditions   TEXT NOT NULL DEFAULT '{}',         -- JSON libre (tiers, buy/get, segment…)
     valid_from   TEXT,                               -- ISO YYYY-MM-DD
@@ -73,11 +74,11 @@ CREATE TABLE IF NOT EXISTS pricing_discount_rule (
     is_active    INTEGER NOT NULL DEFAULT 1,
     priority     INTEGER NOT NULL DEFAULT 100,        -- menor = se aplica antes
     is_deleted   INTEGER NOT NULL DEFAULT 0,
-    deleted_at   TIMESTAMPTZ,
+    deleted_at   TEXT       ,
     created_by   TEXT,
     updated_by   TEXT,
-    created_at   TIMESTAMPTZ,
-    updated_at   TIMESTAMPTZ
+    created_at   TEXT       ,
+    updated_at   TEXT       
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_pricing_rule_hub_code            ON pricing_discount_rule (hub_id, code);
 CREATE INDEX        IF NOT EXISTS ix_pricing_rule_hub_active_priority ON pricing_discount_rule (hub_id, is_active, priority);

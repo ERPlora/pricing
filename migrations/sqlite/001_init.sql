@@ -34,9 +34,9 @@ CREATE TABLE IF NOT EXISTS pricing_price_list_item (
     hub_id        TEXT NOT NULL,
     price_list_id TEXT NOT NULL,
     product_ref   TEXT NOT NULL,
-    price         NUMERIC(15,4) NOT NULL DEFAULT 0,
-    min_quantity  NUMERIC(15,4) NOT NULL DEFAULT 1,
-    max_quantity  NUMERIC(15,4),
+    price         INTEGER NOT NULL DEFAULT 0,        -- céntimos (ADR-0007; antes NUMERIC(15,4))
+    min_quantity  REAL NOT NULL DEFAULT 1,           -- cantidad fraccionable (no es dinero)
+    max_quantity  REAL,                          -- cantidad fraccionable
     is_deleted    INTEGER NOT NULL DEFAULT 0,
     deleted_at    TEXT,
     created_by    TEXT,
@@ -55,9 +55,9 @@ CREATE TABLE IF NOT EXISTS pricing_discount_rule (
     code         TEXT NOT NULL,
     name         TEXT NOT NULL,
     rule_type    TEXT NOT NULL DEFAULT 'percent',   -- percent|fixed|buy_x_get_y|tiered
-    value        NUMERIC(15,4) NOT NULL DEFAULT 0,
-    min_amount   NUMERIC(15,4),
-    max_amount   NUMERIC(15,4),
+    value        REAL NOT NULL DEFAULT 0,            -- % o euros (polimórfico por rule_type, no céntimos)
+    min_amount   INTEGER,                       -- céntimos
+    max_amount   INTEGER,                       -- céntimos
     applies_to   TEXT NOT NULL DEFAULT 'all',        -- all|customer_segment|product_category
     conditions   TEXT NOT NULL DEFAULT '{}',         -- JSON libre (tiers, buy/get, segment…)
     valid_from   TEXT,                               -- ISO YYYY-MM-DD
