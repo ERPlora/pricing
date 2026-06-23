@@ -5,12 +5,20 @@ import '@erplora/outfitkit/ok-data-table';
 import type { DataTableColumn } from '@erplora/outfitkit';
 import { createListController } from '@erplora/module-sdk';
 import type { ListController, ListClient, ListParams, ListPage } from '@erplora/module-sdk';
+// Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC. Los textos
+// internos se resuelven con `erplora.t(CATALOG, 'ui.clave')` (idioma activo, fallback locale→en→clave).
+import esLocale from '../../../locales/es.json';
+import enLocale from '../../../locales/en.json';
+const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
 interface ErploraClientLike extends ListClient {
   query<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T>;
   queryPage<R = unknown>(name: string, params: ListParams): Promise<ListPage<R>>;
   command<T = unknown>(name: string, payload?: Record<string, unknown>): Promise<T>;
   on(event: string, cb: (payload: unknown) => void): () => void;
+  /** i18n del módulo (ADR-0055): idioma activo + traducción del catálogo `ui`. */
+  locale: string;
+  t(catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>): string;
 }
 
 interface PriceList {
@@ -66,40 +74,53 @@ export class ErpPricingLists extends LitElement {
 
   private unsub?: () => void;
 
-  private listColumns: DataTableColumn[] = [
+  // Getters (no campos): se re-evalúan en cada render, así los headers cambian con el idioma activo
+  // (ADR-0055). `connectedCallback` re-renderiza al recibir `erplora:locale-changed`.
+  private get listColumns(): DataTableColumn[] {
+    const t = (k: string): string => erplora().t(CATALOG, k);
+    return [
     {
       key: 'code',
-      header: 'Código',
+      header: t('ui.colCode'),
       sortable: true,
       filterable: true,
       filterType: 'text',
-      format: (r) => `${r.code}${r.is_default ? '  (default)' : ''}`,
+      format: (r) => `${r.code}${r.is_default ? `  ${t('ui.defaultBadge')}` : ''}`,
     },
-    { key: 'name', header: 'Nombre', sortable: true, filterable: true, filterType: 'text' },
-    { key: 'currency', header: 'Divisa', sortable: true, filterable: true, filterType: 'text' },
+    { key: 'name', header: t('ui.colName'), sortable: true, filterable: true, filterType: 'text' },
+    { key: 'currency', header: t('ui.colCurrency'), sortable: true, filterable: true, filterType: 'text' },
     {
       key: 'segment',
-      header: 'Segmento',
+      header: t('ui.colSegment'),
       sortable: true,
       filterable: true,
       filterType: 'text',
       format: (r) => (r.segment as string) ?? '—',
     },
-  ];
+    ];
+  }
 
-  private ruleColumns: DataTableColumn[] = [
-    { key: 'code', header: 'Código', sortable: true, filterable: true, filterType: 'text' },
-    { key: 'name', header: 'Nombre', sortable: true, filterable: true, filterType: 'text' },
-    { key: 'rule_type', header: 'Tipo', sortable: true, filterable: true, filterType: 'text' },
-    { key: 'value', header: 'Valor', align: 'right', sortable: true, filterable: true, filterType: 'range' },
-    { key: 'priority', header: 'Prioridad', align: 'right', sortable: true, filterable: true, filterType: 'text' },
-  ];
+  private get ruleColumns(): DataTableColumn[] {
+    const t = (k: string): string => erplora().t(CATALOG, k);
+    return [
+    { key: 'code', header: t('ui.colCode'), sortable: true, filterable: true, filterType: 'text' },
+    { key: 'name', header: t('ui.colName'), sortable: true, filterable: true, filterType: 'text' },
+    { key: 'rule_type', header: t('ui.colType'), sortable: true, filterable: true, filterType: 'text' },
+    { key: 'value', header: t('ui.colValue'), align: 'right', sortable: true, filterable: true, filterType: 'range' },
+    { key: 'priority', header: t('ui.colPriority'), align: 'right', sortable: true, filterable: true, filterType: 'text' },
+    ];
+  }
+
+  // Re-render al cambiar el idioma del shell (ADR-0055): los getters `listColumns`/`ruleColumns` y
+  // el texto del template se re-evalúan con el nuevo `erplora.locale`.
+  private readonly onLocaleChange = (): void => this.requestUpdate();
 
   // TODO-LIT: componentWillLoad → connectedCallback. Recuerda: connectedCallback se dispara
   // en CADA reconexión al DOM (no solo en el primer montaje). Si la init debe correr una
   // sola vez tras el primer render, considera firstUpdated() en su lugar.
   async connectedCallback() {
     super.connectedCallback();
+    window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     this.listsCtrl = createListController<PriceList>(erplora(), 'pricing.price_lists.list', () => this.requestUpdate(), {
       pageSize: 50,
       sort: 'name',
@@ -127,6 +148,7 @@ export class ErpPricingLists extends LitElement {
   }
 
   disconnectedCallback() {
+    window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
     super.disconnectedCallback();
     this.unsub?.();
   }
@@ -151,29 +173,30 @@ export class ErpPricingLists extends LitElement {
       this.newCurrency = 'EUR';
       await this.listsCtrl.load(); // (además del evento; garantiza refresco inmediato)
     } catch (e) {
-      this.formError = e instanceof Error ? e.message : 'No se pudo crear la lista';
+      this.formError = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.createListError');
     } finally {
       this.saving = false;
     }
   }
 
   render() {
+    const t = (k: string): string => erplora().t(CATALOG, k);
     return html`<div>
         <header>
-          <h2>Listas de precios</h2>
+          <h2>${t('ui.title')}</h2>
         </header>
         <form class="form" @submit=${(e) => this.createList(e)}>
-          <ion-input placeholder="Código" .value=${this.newCode} @ionInput=${(e: any) => (this.newCode = e.target.value)}></ion-input>
-          <ion-input placeholder="Nombre" .value=${this.newName} @ionInput=${(e: any) => (this.newName = e.target.value)}></ion-input>
-          <ion-input placeholder="Divisa" .value=${this.newCurrency} @ionInput=${(e: any) => (this.newCurrency = e.target.value)}></ion-input>
-          <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCode || !this.newName}>${this.saving ? 'Guardando…' : 'Añadir'}</ion-button>
+          <ion-input placeholder=${t('ui.phCode')} .value=${this.newCode} @ionInput=${(e: any) => (this.newCode = e.target.value)}></ion-input>
+          <ion-input placeholder=${t('ui.phName')} .value=${this.newName} @ionInput=${(e: any) => (this.newName = e.target.value)}></ion-input>
+          <ion-input placeholder=${t('ui.phCurrency')} .value=${this.newCurrency} @ionInput=${(e: any) => (this.newCurrency = e.target.value)}></ion-input>
+          <ion-button type="submit" size="small" ?disabled=${this.saving || !this.newCode || !this.newName}>${this.saving ? t('ui.btnSaving') : t('ui.btnAdd')}</ion-button>
         </form>
         ${this.formError ? html`<p class="err">${this.formError}</p>` : nothing}
         ${this.listsCtrl?.error ? html`<p class="err">${this.listsCtrl.error}</p>` : nothing}
-        <ok-data-table .serverSide=${true} .columns=${this.listColumns} .rows=${this.listsCtrl?.rows ?? []} .total=${this.listsCtrl?.total ?? 0} .page=${this.listsCtrl?.state.page ?? 0} .pageSize=${this.listsCtrl?.state.pageSize ?? 50} .sort=${this.listsCtrl?.state.sort} .sortDir=${this.listsCtrl?.state.dir ?? 'asc'} .searchable=${true} .searchPlaceholder=${"Buscar código o nombre…"} .emptyMessage=${this.listsCtrl?.loading ? 'Cargando…' : 'Sin listas de precios.'} @pageChange=${(e: CustomEvent<number>) => this.listsCtrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.listsCtrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.listsCtrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.listsCtrl.setFilter(e.detail.col, e.detail.value)}></ok-data-table>
-        <h3>Reglas de descuento</h3>
+        <ok-data-table .serverSide=${true} .columns=${this.listColumns} .rows=${this.listsCtrl?.rows ?? []} .total=${this.listsCtrl?.total ?? 0} .page=${this.listsCtrl?.state.page ?? 0} .pageSize=${this.listsCtrl?.state.pageSize ?? 50} .sort=${this.listsCtrl?.state.sort} .sortDir=${this.listsCtrl?.state.dir ?? 'asc'} .searchable=${true} .searchPlaceholder=${t('ui.searchPlaceholder')} .emptyMessage=${this.listsCtrl?.loading ? t('ui.loading') : t('ui.emptyLists')} @pageChange=${(e: CustomEvent<number>) => this.listsCtrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.listsCtrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.listsCtrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.listsCtrl.setFilter(e.detail.col, e.detail.value)}></ok-data-table>
+        <h3>${t('ui.rulesTitle')}</h3>
         ${this.rulesCtrl?.error ? html`<p class="err">${this.rulesCtrl.error}</p>` : nothing}
-        <ok-data-table .serverSide=${true} .columns=${this.ruleColumns} .rows=${this.rulesCtrl?.rows ?? []} .total=${this.rulesCtrl?.total ?? 0} .page=${this.rulesCtrl?.state.page ?? 0} .pageSize=${this.rulesCtrl?.state.pageSize ?? 50} .sort=${this.rulesCtrl?.state.sort} .sortDir=${this.rulesCtrl?.state.dir ?? 'asc'} .searchable=${true} .searchPlaceholder=${"Buscar código o nombre…"} .emptyMessage=${this.rulesCtrl?.loading ? 'Cargando…' : 'Sin reglas de descuento.'} @pageChange=${(e: CustomEvent<number>) => this.rulesCtrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.rulesCtrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.rulesCtrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.rulesCtrl.setFilter(e.detail.col, e.detail.value)}></ok-data-table>
+        <ok-data-table .serverSide=${true} .columns=${this.ruleColumns} .rows=${this.rulesCtrl?.rows ?? []} .total=${this.rulesCtrl?.total ?? 0} .page=${this.rulesCtrl?.state.page ?? 0} .pageSize=${this.rulesCtrl?.state.pageSize ?? 50} .sort=${this.rulesCtrl?.state.sort} .sortDir=${this.rulesCtrl?.state.dir ?? 'asc'} .searchable=${true} .searchPlaceholder=${t('ui.searchPlaceholder')} .emptyMessage=${this.rulesCtrl?.loading ? t('ui.loading') : t('ui.emptyRules')} @pageChange=${(e: CustomEvent<number>) => this.rulesCtrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.rulesCtrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.rulesCtrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.rulesCtrl.setFilter(e.detail.col, e.detail.value)}></ok-data-table>
       </div>`;
   }
 }

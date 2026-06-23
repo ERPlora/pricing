@@ -4,5 +4,27 @@
     "lists": {
       "label": "Tarifas"
     }
+  },
+  "ui": {
+    "title": "Listas de precios",
+    "rulesTitle": "Reglas de descuento",
+    "colCode": "Código",
+    "colName": "Nombre",
+    "colCurrency": "Divisa",
+    "colSegment": "Segmento",
+    "colType": "Tipo",
+    "colValue": "Valor",
+    "colPriority": "Prioridad",
+    "defaultBadge": "(default)",
+    "phCode": "Código",
+    "phName": "Nombre",
+    "phCurrency": "Divisa",
+    "searchPlaceholder": "Buscar código o nombre…",
+    "btnAdd": "Añadir",
+    "btnSaving": "Guardando…",
+    "loading": "Cargando…",
+    "emptyLists": "Sin listas de precios.",
+    "emptyRules": "Sin reglas de descuento.",
+    "createListError": "No se pudo crear la lista"
   }
 }

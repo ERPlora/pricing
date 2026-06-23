@@ -4,5 +4,27 @@
     "lists": {
       "label": "Price Lists"
     }
+  },
+  "ui": {
+    "title": "Price lists",
+    "rulesTitle": "Discount rules",
+    "colCode": "Code",
+    "colName": "Name",
+    "colCurrency": "Currency",
+    "colSegment": "Segment",
+    "colType": "Type",
+    "colValue": "Value",
+    "colPriority": "Priority",
+    "defaultBadge": "(default)",
+    "phCode": "Code",
+    "phName": "Name",
+    "phCurrency": "Currency",
+    "searchPlaceholder": "Search code or name…",
+    "btnAdd": "Add",
+    "btnSaving": "Saving…",
+    "loading": "Loading…",
+    "emptyLists": "No price lists.",
+    "emptyRules": "No discount rules.",
+    "createListError": "Could not create the list"
   }
 }
