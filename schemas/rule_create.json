@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "pricing.rules.create payload",
+  "description": "Las dos unidades van SEPARADAS (ADR-0007/0123): `value` es una TASA en % y `amount_cents` es DINERO en céntimos. Antes compartían la columna `value` («% o euros» según rule_type), y un descuento fijo de 5 € acababa restando 5 CÉNTIMOS.",
   "type": "object",
   "properties": {
     "code": { "type": "string", "minLength": 1, "maxLength": 50 },
@@ -9,9 +10,28 @@
       "type": "string",
       "enum": ["percent", "fixed", "buy_x_get_y", "tiered"]
     },
-    "value": { "type": ["string", "number"] },
-    "min_amount": { "type": ["integer","null"], "default": null },
-    "max_amount": { "type": ["integer","null"], "default": null },
+    "value": {
+      "type": "number",
+      "description": "TASA en % (12.5 = 12,5 %). Solo para `percent` (y `tiered` con unit=percent). NO es dinero: por eso lleva decimales.",
+      "minimum": 0,
+      "default": 0
+    },
+    "amount_cents": {
+      "type": "integer",
+      "description": "DINERO en CÉNTIMOS (5 € = 500). Solo para `fixed`. Entero: el céntimo es la unidad mínima.",
+      "minimum": 0,
+      "default": 0
+    },
+    "min_amount": {
+      "type": ["integer", "null"],
+      "description": "Importe mínimo al que aplica la regla, en CÉNTIMOS (10 € = 1000).",
+      "default": null
+    },
+    "max_amount": {
+      "type": ["integer", "null"],
+      "description": "Importe máximo al que aplica la regla, en CÉNTIMOS.",
+      "default": null
+    },
     "applies_to": {
       "type": "string",
       "enum": ["all", "customer_segment", "product_category"],
@@ -19,13 +39,13 @@
     },
     "conditions": {
       "type": "string",
-      "description": "Documento JSON serializado (tiers, buy/get, segment…).",
+      "description": "Documento JSON serializado (tiers, buy/get, segment…). El DINERO que viaje dentro (`unit_price`, `tiers[].discount` con unit=fixed) también son CÉNTIMOS enteros.",
       "default": "{}"
     },
     "valid_from": { "type": ["string", "null"], "format": "date", "default": null },
     "valid_until": { "type": ["string", "null"], "format": "date", "default": null },
     "priority": { "type": "integer", "default": 100 }
   },
-  "required": ["code", "name", "rule_type", "value"],
+  "required": ["code", "name", "rule_type"],
   "additionalProperties": false
 }
