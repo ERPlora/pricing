@@ -10,8 +10,8 @@
       "enum": ["percent", "fixed", "buy_x_get_y", "tiered"]
     },
     "value": { "type": ["string", "number"] },
-    "min_amount": { "type": ["string", "number", "null"], "default": null },
-    "max_amount": { "type": ["string", "number", "null"], "default": null },
+    "min_amount": { "type": ["integer","null"], "default": null },
+    "max_amount": { "type": ["integer","null"], "default": null },
     "applies_to": {
       "type": "string",
       "enum": ["all", "customer_segment", "product_category"],

@@ -5,7 +5,7 @@
   "properties": {
     "price_list_id": { "type": "string", "minLength": 1 },
     "product_ref": { "type": "string", "minLength": 1, "maxLength": 100 },
-    "price": { "type": ["string", "number"] },
+    "price": { "type": "integer" },
     "min_quantity": { "type": ["string", "number"], "default": "1" },
     "max_quantity": { "type": ["string", "number", "null"], "default": null }
   },
