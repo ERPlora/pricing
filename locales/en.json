@@ -12,6 +12,18 @@
     "colName": "Name",
     "colCurrency": "Currency",
     "colSegment": "Segment",
+    "segment": {
+      "customer": "Consumer",
+      "business": "Business",
+      "wholesale": "Wholesale",
+      "retail": "Retail"
+    },
+    "ruleType": {
+      "percent": "Percentage",
+      "fixed": "Fixed amount",
+      "buy_x_get_y": "Buy X get Y",
+      "tiered": "Tiered"
+    },
     "colType": "Type",
     "colValue": "Value",
     "colPriority": "Priority",

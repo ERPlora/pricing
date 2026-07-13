@@ -12,6 +12,18 @@
     "colName": "Nombre",
     "colCurrency": "Divisa",
     "colSegment": "Segmento",
+    "segment": {
+      "customer": "Particular",
+      "business": "Empresa",
+      "wholesale": "Mayorista",
+      "retail": "Minorista"
+    },
+    "ruleType": {
+      "percent": "Porcentaje",
+      "fixed": "Importe fijo",
+      "buy_x_get_y": "Compra X, llévate Y",
+      "tiered": "Por tramos"
+    },
     "colType": "Tipo",
     "colValue": "Valor",
     "colPriority": "Prioridad",
