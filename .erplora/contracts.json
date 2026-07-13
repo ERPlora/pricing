@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "module": "pricing",
+  "consumes": {
+    "queries": [
+      "pricing.price_lists.list",
+      "pricing.rules.list"
+    ],
+    "optional_queries": [],
+    "commands": [
+      "pricing.price_lists.create"
+    ],
+    "events": [
+      "pricing.price_list.created",
+      "pricing.rule.created",
+      "pricing.rule.deactivated"
+    ],
+    "slots": []
+  }
+}
