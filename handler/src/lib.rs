@@ -25,9 +25,10 @@
 //!   humano defina ese contrato en el core, los exports devuelven un error
 //!   explícito `unsupported_readonly_handler`.
 
+use erplora_guest_sdk::money as sdk_money;
 use erplora_guest_sdk::{Operation, Output};
 use rust_decimal::prelude::ToPrimitive;
-use rust_decimal::{Decimal, RoundingStrategy};
+use rust_decimal::Decimal;
 use serde_json::{json, Map, Value};
 use std::str::FromStr;
 
@@ -101,16 +102,19 @@ fn dec_opt(v: Option<&Value>) -> Option<Decimal> {
     }
 }
 
-/// `quantize(0.01, HALF_UP)` (WASM-TODO.md §5).
-fn q2(d: Decimal) -> Decimal {
-    d.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
+/// Redondea a CÉNTIMO ENTERO. **No decide el modo**: delega en [`erplora_guest_sdk::money::round`],
+/// que es EL redondeo del hub (HALF_UP, ADR-0123 §4). La disputa que había —`pricing`/`taxes` en
+/// HALF_UP contra `sales`/`invoice` en half-even— venía de que cada handler traía su propia
+/// aritmética. Ya no: hay una.
+fn q0(d: Decimal) -> Decimal {
+    Decimal::from(sdk_money::round(d))
 }
 
-/// Importe quantizado a 2 decimales como string exacto (p.ej. `"97.50"`).
+/// Importe como CÉNTIMOS ENTEROS (p. ej. `9750`), que es lo que el caller suma a sus totales.
+/// Antes emitía strings de EUROS (`"97.50"`) — un caller que los sumara a un total en céntimos se
+/// equivocaba ×100.
 fn money(d: Decimal) -> Value {
-    let mut x = q2(d);
-    x.rescale(2);
-    json!(x.to_string())
+    json!(sdk_money::round(d))
 }
 
 /// String opcional: trim; vacío/null → None.
@@ -368,7 +372,7 @@ pub fn calculate_discount_compute(payload: &Value, db_rules: &[Value]) -> Result
         ka.cmp(&kb)
     });
 
-    let original = q2(amount);
+    let original = q0(amount);
     let mut running = original;
     let mut applied: Vec<Value> = Vec::new();
     let hundred = Decimal::from(100);
@@ -398,14 +402,18 @@ pub fn calculate_discount_compute(payload: &Value, db_rules: &[Value]) -> Result
             }
         }
 
+        // `value` es una TASA (%), nunca dinero. El dinero de una regla `fixed` vive en su propia
+        // columna `amount_cents` (INTEGER, céntimos). Antes las dos cosas compartían la columna
+        // `value REAL -- % o euros`: un descuento fijo de 5 € restaba 5 CÉNTIMOS.
         let value = dec_opt(r.get("value")).unwrap_or(Decimal::ZERO);
+        let amount_cents = dec_opt(r.get("amount_cents")).unwrap_or(Decimal::ZERO);
         let rule_type = {
             let t = as_str(r.get("rule_type").unwrap_or(&Value::Null));
             if t.is_empty() { "percent".to_string() } else { t }
         };
         let delta = match rule_type.as_str() {
             "percent" => running * value / hundred,
-            "fixed" => value,
+            "fixed" => amount_cents,
             "tiered" => {
                 // Mayor `discount` cuyo `min <= running`; sin tier que cualifique → saltar.
                 let empty: Vec<Value> = Vec::new();
@@ -444,7 +452,7 @@ pub fn calculate_discount_compute(payload: &Value, db_rules: &[Value]) -> Result
             _ => continue, // rule_type desconocido → saltar la regla.
         };
 
-        // Clamp a [0, running] y quantize 0.01 HALF_UP.
+        // Clamp a [0, running] y redondeo a céntimo entero (una sola vez, aquí).
         let delta = if delta < Decimal::ZERO {
             Decimal::ZERO
         } else if delta > running {
@@ -452,8 +460,8 @@ pub fn calculate_discount_compute(payload: &Value, db_rules: &[Value]) -> Result
         } else {
             delta
         };
-        let delta_q = q2(delta);
-        running = q2(running - delta_q);
+        let delta_q = q0(delta);
+        running = q0(running - delta_q);
         applied.push(json!({
             "code": as_str(r.get("code").unwrap_or(&Value::Null)),
             "rule_type": rule_type,
@@ -469,4 +477,122 @@ pub fn calculate_discount_compute(payload: &Value, db_rules: &[Value]) -> Result
         "total_discount": money(original - running),
         "applied_rules": applied,
     }))
+}
+
+// ─────────────────────────────── tests ───────────────────────────────
+//
+// EL DINERO DE ESTE MÓDULO SON CÉNTIMOS (ADR-0007), como en el resto del hub.
+//
+// `pricing` se quedó atrás: su BD ya había migrado (`pricing_price_list_item.price INTEGER --
+// céntimos`, `min_amount`/`max_amount` en céntimos) pero el MOTOR seguía razonando en EUROS
+// (`quantize(0.01)`, salidas tipo `"97.50"`). Eso rompía TRES cosas a la vez, todas ×100:
+//
+//   1. Un descuento FIJO de 5 € restaba **5 CÉNTIMOS** (`"fixed" => value`, con `value` en euros y
+//      el running en céntimos).
+//   2. Los filtros `min_amount`/`max_amount` (céntimos) se comparaban contra un running en euros:
+//      una regla «desde 10 €» (min_amount = 1000) NO disparaba en una venta de 50 € (running = 50).
+//   3. La salida eran strings de euros, así que el primer caller que la sumara a un total en
+//      céntimos volvía a equivocarse ×100.
+//
+// La causa raíz de (1) era una columna POLIMÓRFICA: `value REAL -- % o euros`. Una columna, dos
+// unidades, y el discriminador en OTRA columna. Ahora el porcentaje vive en `value` (es una TASA,
+// no dinero) y el importe fijo en `amount_cents` (es dinero → céntimos). Nadie tiene que adivinar.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Una regla tal y como se la entrega el host desde la BD.
+    fn regla(code: &str, rule_type: &str, value: f64, amount_cents: Option<i64>) -> Value {
+        json!({
+            "code": code, "rule_type": rule_type, "value": value,
+            "amount_cents": amount_cents, "priority": 100, "conditions": "{}",
+        })
+    }
+
+    fn calc(amount_cents: i64, reglas: &[Value]) -> Value {
+        calculate_discount_compute(&json!({ "amount": amount_cents }), reglas).expect("compute")
+    }
+
+    #[test]
+    fn el_importe_va_y_vuelve_en_centimos_ENTEROS() {
+        // 14,93 € = 1493 céntimos. Sale como NÚMERO entero, no como el string de euros "14.93":
+        // el caller suma esto a totales que están en céntimos.
+        let out = calc(1493, &[]);
+        assert_eq!(out["original_amount"], json!(1493));
+        assert_eq!(out["final_amount"], json!(1493));
+        assert_eq!(out["total_discount"], json!(0));
+    }
+
+    #[test]
+    fn un_descuento_fijo_de_5_EUR_resta_500_centimos_NO_5() {
+        // EL BUG: `"fixed" => value` restaba 5 (céntimos) por un descuento de 5 €.
+        let out = calc(1493, &[regla("CINCO", "fixed", 0.0, Some(500))]);
+        assert_eq!(out["total_discount"], json!(500), "un descuento de 5 € resta 500 céntimos");
+        assert_eq!(out["final_amount"], json!(993));
+    }
+
+    #[test]
+    fn el_porcentaje_opera_sobre_centimos_y_sigue_siendo_una_TASA() {
+        // El % es una TASA, no dinero: sigue en `value`. 10 % de 1493 = 149,3 → 149 céntimos.
+        let out = calc(1493, &[regla("DIEZ", "percent", 10.0, None)]);
+        assert_eq!(out["total_discount"], json!(149));
+        assert_eq!(out["final_amount"], json!(1344));
+    }
+
+    #[test]
+    fn el_descuento_se_redondea_a_CENTIMO_ENTERO_no_a_una_fraccion() {
+        // 10 % de 1495 = 149,5 → HALF_UP → 150. Un céntimo fraccionario no existe.
+        let out = calc(1495, &[regla("DIEZ", "percent", 10.0, None)]);
+        assert_eq!(out["total_discount"], json!(150));
+    }
+
+    #[test]
+    fn min_amount_filtra_en_centimos_contra_un_running_en_centimos() {
+        // EL BUG: `min_amount` son céntimos (1000 = 10 €) y se comparaba contra un running en
+        // euros (50) → 50 < 1000 → la regla NO disparaba en una venta de 50 €.
+        let mut r = regla("DESDE10", "percent", 10.0, None);
+        r["min_amount"] = json!(1000); // 10 €
+        let out = calc(5000, &[r]); // venta de 50 €
+        assert_eq!(out["total_discount"], json!(500), "«desde 10 €» debe disparar en una venta de 50 €");
+    }
+
+    #[test]
+    fn max_amount_tambien_filtra_en_centimos() {
+        let mut r = regla("HASTA10", "percent", 10.0, None);
+        r["max_amount"] = json!(1000); // solo hasta 10 €
+        let out = calc(5000, &[r]); // 50 € → fuera de rango
+        assert_eq!(out["total_discount"], json!(0));
+    }
+
+    #[test]
+    fn un_descuento_fijo_mayor_que_el_importe_se_capa_al_importe() {
+        // Clamp a [0, running]: nunca un total negativo ni un «cambio» inventado.
+        let out = calc(300, &[regla("BESTIA", "fixed", 0.0, Some(500))]);
+        assert_eq!(out["total_discount"], json!(300));
+        assert_eq!(out["final_amount"], json!(0));
+    }
+
+    #[test]
+    fn las_reglas_encadenan_por_prioridad_sobre_el_running() {
+        // 1000 cts − 10 % (100) = 900; luego un fijo de 2 € (200) → 700.
+        let mut pct = regla("PCT", "percent", 10.0, None);
+        pct["priority"] = json!(1);
+        let mut fijo = regla("FIJO", "fixed", 0.0, Some(200));
+        fijo["priority"] = json!(2);
+        let out = calc(1000, &[pct, fijo]);
+        assert_eq!(out["final_amount"], json!(700));
+        assert_eq!(out["total_discount"], json!(300));
+    }
+
+    #[test]
+    fn el_desglose_de_reglas_aplicadas_tambien_va_en_centimos() {
+        let out = calc(1493, &[regla("CINCO", "fixed", 0.0, Some(500))]);
+        assert_eq!(out["applied_rules"][0]["discount_amount"], json!(500));
+    }
+
+    #[test]
+    fn un_importe_negativo_sigue_siendo_invalido() {
+        let err = calculate_discount_compute(&json!({ "amount": -1 }), &[]).unwrap_err();
+        assert_eq!(err, "invalid_amount");
+    }
 }

@@ -1,7 +1,7 @@
 {
   "id": "pricing",
   "name": "Pricing",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "agent": {
     "description": "Manages price lists and pricing rules: create and maintain price lists, set item prices, define discount or surcharge rules, and compute the final price for a customer.",
     "keywords": [
@@ -44,10 +44,12 @@
   ],
   "migrations": {
     "sqlite": [
-      "migrations/sqlite/001_init.sql"
+      "migrations/sqlite/001_init.sql",
+      "migrations/sqlite/002_discount_amount_cents.sql"
     ],
     "postgres": [
-      "migrations/postgres/001_init.sql"
+      "migrations/postgres/001_init.sql",
+      "migrations/postgres/002_discount_amount_cents.sql"
     ]
   },
   "queries": {
@@ -134,6 +136,7 @@
           "name",
           "rule_type",
           "value",
+          "amount_cents",
           "min_amount",
           "max_amount",
           "applies_to",
@@ -156,6 +159,9 @@
             "op": "eq"
           },
           "value": {
+            "op": "range"
+          },
+          "amount_cents": {
             "op": "range"
           },
           "min_amount": {
