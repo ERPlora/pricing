@@ -1,6 +1,7 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { state } from 'lit/decorators.js';
 import { define } from '@erplora/outfitkit/define';
+import '@erplora/outfitkit/ok-inline-feedback';
 import '@erplora/outfitkit/ok-data-table';
 import type { DataTableColumn } from '@erplora/outfitkit';
 import { createListController } from '@erplora/module-sdk';
@@ -209,8 +210,8 @@ export class ErpPricingLists extends LitElement {
   render() {
     const t = (k: string): string => erplora().t(CATALOG, k);
     return html`<div class="page">
-        ${this.formError ? html`<p class="err">${this.formError}</p>` : nothing}
-        ${this.listsCtrl?.error ? html`<p class="err">${this.listsCtrl.error}</p>` : nothing}
+        ${this.formError ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>` : nothing}
+        ${this.listsCtrl?.error ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.listsCtrl.error}</ok-inline-feedback>` : nothing}
         <ok-data-table .serverSide=${true} .fill=${true} .addable=${true} .columns=${this.listColumns} .views=${true} .cardTitle=${(r: Record<string, unknown>) => String(r.name ?? '—')} .cardIcon=${() => 'pricetags-outline'} .rows=${this.listsCtrl?.rows ?? []} .total=${this.listsCtrl?.total ?? 0} .page=${this.listsCtrl?.state.page ?? 0} .pageSize=${this.listsCtrl?.state.pageSize ?? 50} .sort=${this.listsCtrl?.state.sort} .sortDir=${this.listsCtrl?.state.dir ?? 'asc'} .searchable=${true} .searchPlaceholder=${t('ui.searchPlaceholder')} .emptyMessage=${this.listsCtrl?.loading ? t('ui.loading') : t('ui.emptyLists')} @pageChange=${(e: CustomEvent<number>) => this.listsCtrl.setPage(e.detail)} @pageSizeChange=${(e: CustomEvent<number>) => this.listsCtrl.setPageSize(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.listsCtrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.listsCtrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.listsCtrl.setFilter(e.detail.col, e.detail.value)}>
           <!-- Alta: se proyecta SIEMPRE (aunque el panel esté cerrado); si solo se pintara al abrir,
                el «+» de la barra desplegaría un panel vacío. -->
@@ -222,7 +223,7 @@ export class ErpPricingLists extends LitElement {
           </form>
         </ok-data-table>
         <h3>${t('ui.rulesTitle')}</h3>
-        ${this.rulesCtrl?.error ? html`<p class="err">${this.rulesCtrl.error}</p>` : nothing}
+        ${this.rulesCtrl?.error ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.rulesCtrl.error}</ok-inline-feedback>` : nothing}
         <ok-data-table .serverSide=${true} .fill=${true} .addable=${false} .columns=${this.ruleColumns} .views=${true} .cardTitle=${(r: Record<string, unknown>) => String(r.name || r.code || '—')} .cardIcon=${() => 'options-outline'} .rows=${this.rulesCtrl?.rows ?? []} .total=${this.rulesCtrl?.total ?? 0} .page=${this.rulesCtrl?.state.page ?? 0} .pageSize=${this.rulesCtrl?.state.pageSize ?? 50} .sort=${this.rulesCtrl?.state.sort} .sortDir=${this.rulesCtrl?.state.dir ?? 'asc'} .searchable=${true} .searchPlaceholder=${t('ui.searchPlaceholder')} .emptyMessage=${this.rulesCtrl?.loading ? t('ui.loading') : t('ui.emptyRules')} @pageChange=${(e: CustomEvent<number>) => this.rulesCtrl.setPage(e.detail)} @pageSizeChange=${(e: CustomEvent<number>) => this.rulesCtrl.setPageSize(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.rulesCtrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.rulesCtrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.rulesCtrl.setFilter(e.detail.col, e.detail.value)}></ok-data-table>
       </div>`;
   }
