@@ -28,6 +28,8 @@ interface PriceList {
   currency: string;
   is_default: number;
   segment: string | null;
+  /** ADR-0210 tri-state: 1 gross · 0 taxable base · null = inherit the hub. */
+  tax_included: number | null;
 }
 
 interface DiscountRule {
@@ -42,6 +44,9 @@ interface DiscountRule {
 // Dominios cerrados de la migración (001_init.sql): el segmento de una lista y el tipo de una regla
 // de descuento. Se ELIGEN (select), y el servidor los declara `op: eq` → el filtro es real.
 const SEGMENTS = ['customer', 'business', 'wholesale', 'retail'];
+// ADR-0210: the two states a list can PIN. A third one exists —inherit the hub— but it is the
+// ABSENCE of a value (NULL), so it is not a filter option: you cannot filter for "no answer".
+const TAX_BASIS = ['1', '0'];
 const RULE_TYPES = ['percent', 'fixed', 'buy_x_get_y', 'tiered'];
 
 function erplora(): ErploraClientLike {
@@ -70,6 +75,10 @@ export class ErpPricingLists extends LitElement {
   @state() newName = '';
 
   @state() newCurrency = 'EUR';
+
+  // '' = inherit the hub (stored as NULL). A new list follows the hub unless the user pins it:
+  // pinning by default would freeze today's setting into every list ever created.
+  @state() newTaxIncluded: '' | '1' | '0' = '';
 
   @state() saving = false;
 
@@ -104,6 +113,20 @@ export class ErpPricingLists extends LitElement {
       filterType: 'select',
       options: SEGMENTS.map((v) => ({ value: v, label: t(`ui.segment.${v}`) })),
       format: (r) => (r.segment ? t(`ui.segment.${String(r.segment)}`) : '—'),
+    },
+    {
+      key: 'tax_included',
+      header: t('ui.colTaxBasis'),
+      sortable: true,
+      filterable: true,
+      filterType: 'select',
+      options: TAX_BASIS.map((v) => ({ value: v, label: t(`ui.taxBasis.${v === '1' ? 'included' : 'excluded'}`) })),
+      // NULL is not "unknown": it is "inherit the hub", and it is said out loud so nobody has to
+      // guess what a blank cell means.
+      format: (r) =>
+        r.tax_included === null || r.tax_included === undefined
+          ? t('ui.taxBasis.inherit')
+          : t(`ui.taxBasis.${Number(r.tax_included) === 1 ? 'included' : 'excluded'}`),
     },
     ];
   }
@@ -188,12 +211,15 @@ export class ErpPricingLists extends LitElement {
         currency: (this.newCurrency || 'EUR').trim().toUpperCase(),
         segment: null,
         is_default: false,
+        // '' → null: "inherit the hub", NOT a resolved value (ADR-0210).
+        tax_included: this.newTaxIncluded === '' ? null : this.newTaxIncluded === '1',
         valid_from: null,
         valid_until: null,
       });
       this.newCode = '';
       this.newName = '';
       this.newCurrency = 'EUR';
+      this.newTaxIncluded = '';
       this.dataTable()?.close(); // el panel de alta se cierra solo tras crear
       await this.listsCtrl.load(); // (además del evento; garantiza refresco inmediato)
     } catch (e) {
@@ -218,6 +244,11 @@ export class ErpPricingLists extends LitElement {
             <ion-input fill="outline" label-placement="floating" label=${t('ui.colCode')} .value=${this.newCode} @ionInput=${(e: any) => (this.newCode = e.target.value)}></ion-input>
             <ion-input fill="outline" label-placement="floating" label=${t('ui.colName')} .value=${this.newName} @ionInput=${(e: any) => (this.newName = e.target.value)}></ion-input>
             <ion-input fill="outline" label-placement="floating" label=${t('ui.colCurrency')} .value=${this.newCurrency} @ionInput=${(e: any) => (this.newCurrency = e.target.value)}></ion-input>
+            <ion-select fill="outline" label-placement="floating" label=${t('ui.colTaxBasis')} .value=${this.newTaxIncluded} @ionChange=${(e: any) => (this.newTaxIncluded = e.target.value)}>
+              <ion-select-option value="">${t('ui.taxBasis.inherit')}</ion-select-option>
+              <ion-select-option value="1">${t('ui.taxBasis.included')}</ion-select-option>
+              <ion-select-option value="0">${t('ui.taxBasis.excluded')}</ion-select-option>
+            </ion-select>
             <ion-button type="submit" ?disabled=${this.saving || !this.newCode || !this.newName}>${this.saving ? t('ui.btnSaving') : t('ui.btnAdd')}</ion-button>
           </form>
         </ok-data-table>

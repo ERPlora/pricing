@@ -46,7 +46,8 @@
   "migrations": {
     "postgres": [
       "migrations/postgres/001_init.sql",
-      "migrations/postgres/002_discount_amount_cents.sql"
+      "migrations/postgres/002_discount_amount_cents.sql",
+      "migrations/postgres/003_price_list_tax_basis.sql"
     ]
   },
   "queries": {
@@ -67,7 +68,8 @@
           "is_active",
           "valid_from",
           "valid_until",
-          "segment"
+          "segment",
+          "tax_included"
         ],
         "default_sort": "name",
         "default_dir": "asc",
@@ -95,6 +97,9 @@
           },
           "segment": {
             "op": "eq"
+          },
+          "tax_included": {
+            "op": "eq"
           }
         },
         "page_size": 50
@@ -117,6 +122,14 @@
       "schema": "schemas/price_list_items.json",
       "ai": {
         "description": "Lists the products and their prices included in a price list."
+      }
+    },
+    "pricing.price_lists.items_by_product": {
+      "permission": "pricing.view_pricing",
+      "sql": "queries/price_list_items_by_product.sql",
+      "schema": "schemas/price_list_items_by_product.json",
+      "ai": {
+        "description": "Lists the price of one product across every price list."
       }
     },
     "pricing.rules.list": {
@@ -254,6 +267,15 @@
     "pricing.price_lists.get_price": {
       "permission": "pricing.apply_pricing",
       "schema": "schemas/get_price.json",
+      "reads": [
+        "pricing.price_lists.list",
+        {
+          "query": "pricing.price_lists.items_by_product",
+          "params": {
+            "product_ref": "payload.product_ref"
+          }
+        }
+      ],
       "handler": {
         "type": "wasm",
         "file": "dist/handler.wasm",
@@ -266,6 +288,9 @@
     "pricing.rules.calculate_discount": {
       "permission": "pricing.apply_pricing",
       "schema": "schemas/calculate_discount.json",
+      "reads": [
+        "pricing.rules.list"
+      ],
       "handler": {
         "type": "wasm",
         "file": "dist/handler.wasm",

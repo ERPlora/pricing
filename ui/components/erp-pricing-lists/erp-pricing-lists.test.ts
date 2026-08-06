@@ -94,6 +94,62 @@ describe('los filtros de dominio cerrado son `select`', () => {
   });
 });
 
+// ADR-0210: a price list says whether its prices already carry the tax. If the field is only in
+// the DB, nobody can set it — and the whole point is that a B2B list and a retail list can coexist
+// without anyone guessing. It is a CLOSED domain with THREE states, so it is chosen, never typed:
+// included · excluded · inherit the hub (the default, stored as NULL).
+describe('the tax basis of a price list is set from the UI', () => {
+  it('the create panel offers the three states, and "inherit" is the default', async () => {
+    const el = await montar();
+    const select = el.shadowRoot.querySelector('form[slot="create"] ion-select');
+    expect(select, 'there is no way to set the tax basis when creating a list').toBeTruthy();
+    const options = [...(select?.querySelectorAll('ion-select-option') ?? [])].map((o) =>
+      o.getAttribute('value'),
+    );
+    expect(options).toEqual(['', '1', '0']);
+    expect(
+      (el as unknown as { newTaxIncluded: string }).newTaxIncluded,
+      'a new list must inherit the hub unless the user says otherwise',
+    ).toBe('');
+  });
+
+  it('"inherit" is sent as NULL, not as a resolved value', async () => {
+    const el = await montar();
+    const wc = el as unknown as {
+      newCode: string; newName: string; createList: (ev: Event) => Promise<void>;
+    };
+    wc.newCode = 'RETAIL';
+    wc.newName = 'Retail';
+    await wc.createList(new Event('submit'));
+    const alta = comandos.find((c) => c.name === 'pricing.price_lists.create');
+    expect(alta!.payload.tax_included, 'NULL means "follow the hub", not "assume something"').toBeNull();
+  });
+
+  it('a B2B list is created with the tax EXCLUDED', async () => {
+    const el = await montar();
+    const wc = el as unknown as {
+      newCode: string; newName: string; newTaxIncluded: string; createList: (ev: Event) => Promise<void>;
+    };
+    wc.newCode = 'B2B';
+    wc.newName = 'Wholesale';
+    wc.newTaxIncluded = '0';
+    await wc.createList(new Event('submit'));
+    const alta = comandos.find((c) => c.name === 'pricing.price_lists.create');
+    expect(alta!.payload.tax_included).toBe(false);
+  });
+
+  it('the column is in the table, and it is a select filter (closed domain)', async () => {
+    const el = await montar();
+    const cols = (el as unknown as {
+      listColumns: { key: string; filterType?: string; options?: { value: string }[] }[];
+    }).listColumns;
+    const basis = cols.find((c) => c.key === 'tax_included');
+    expect(basis, 'the tax basis of a list is invisible in its own table').toBeTruthy();
+    expect(basis?.filterType).toBe('select');
+    expect(basis?.options?.map((o) => o.value)).toEqual(['1', '0']);
+  });
+});
+
 describe('el alta sigue funcionando desde el panel', () => {
   it('crear manda pricing.price_lists.create y CIERRA el panel de la tabla', async () => {
     const el = await montar();

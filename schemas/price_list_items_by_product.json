@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "pricing.price_lists.items_by_product params",
+  "type": "object",
+  "properties": {
+    "product_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "description": "Product whose price is looked up across every price list of the hub."
+    }
+  },
+  "required": ["product_ref"],
+  "additionalProperties": false
+}
