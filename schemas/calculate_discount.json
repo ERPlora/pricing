@@ -3,10 +3,48 @@
   "title": "pricing.rules.calculate_discount payload",
   "type": "object",
   "properties": {
-    "amount": { "type": "integer" },
+    "amount": {
+      "type": "integer",
+      "description": "Aggregate amount in minor units. Preview shape: it carries no lines and no tax rates, so the reply cannot be allocated. Use `lines` for anything that ends up in a fiscal document."
+    },
+    "lines": {
+      "type": "array",
+      "description": "The quote's lines with their tax rate. With lines the reply also carries `allocation` (per line, adding up to the discount exactly) and `by_tax_rate` (ADR-0210). `amount`, if also sent, must equal their sum.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "line_ref": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "The caller's own reference for the line; echoed back in the allocation."
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Line amount in minor units, on the quote's tax basis."
+          },
+          "tax_rate_pct": {
+            "type": "number",
+            "description": "The line's tax rate as a percentage. A RATE, not money: 21, 10, 0, 12.5."
+          },
+          "tax_basis": {
+            "type": "string",
+            "enum": ["inclusive", "exclusive"],
+            "description": "Optional per-line basis. Lines that disagree are rejected (`mixed_tax_basis`)."
+          }
+        },
+        "required": ["amount"],
+        "additionalProperties": false
+      }
+    },
+    "tax_basis": {
+      "type": "string",
+      "enum": ["inclusive", "exclusive"],
+      "description": "Basis of the whole quote: `inclusive` = the amounts already carry the tax · `exclusive` = they are the taxable base. Omitted, it is inherited from the hub and then defaults to `inclusive` (ADR-0210); the reply always states which."
+    },
     "rules": {
       "type": ["array", "null"],
-      "description": "null = cargar todas las reglas activas; lista de UUID-strings = solo esas (activas); lista de dicts = reglas inline (preview, sin lookup en BD).",
+      "description": "null = load every active rule; a list of UUID strings = only those (active); a list of dicts = inline rules (preview, no DB lookup).",
       "items": {
         "type": ["string", "object"]
       },
@@ -18,6 +56,6 @@
       "default": null
     }
   },
-  "required": ["amount"],
+  "anyOf": [{ "required": ["amount"] }, { "required": ["lines"] }],
   "additionalProperties": false
 }

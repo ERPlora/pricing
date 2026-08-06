@@ -18,6 +18,12 @@
       "wholesale": "Wholesale",
       "retail": "Retail"
     },
+    "colTaxBasis": "Tax",
+    "taxBasis": {
+      "inherit": "Hub default",
+      "included": "Tax included",
+      "excluded": "Tax excluded"
+    },
     "ruleType": {
       "percent": "Percentage",
       "fixed": "Fixed amount",

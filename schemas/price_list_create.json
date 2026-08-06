@@ -12,6 +12,11 @@
       "default": null
     },
     "is_default": { "type": "boolean", "default": false },
+    "tax_included": {
+      "type": ["boolean", "null"],
+      "default": null,
+      "description": "Do this list's prices already carry the tax? true = gross (retail/POS, art. 88.Uno LIVA) · false = taxable base, tax added on top (B2B) · null = inherit the hub (hub_settings.tax_mode, then inclusive). ADR-0210."
+    },
     "valid_from": { "type": ["string", "null"], "format": "date", "default": null },
     "valid_until": { "type": ["string", "null"], "format": "date", "default": null }
   },

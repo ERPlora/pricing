@@ -18,6 +18,12 @@
       "wholesale": "Mayorista",
       "retail": "Minorista"
     },
+    "colTaxBasis": "Impuesto",
+    "taxBasis": {
+      "inherit": "Según el hub",
+      "included": "Impuesto incluido",
+      "excluded": "Impuesto no incluido"
+    },
     "ruleType": {
       "percent": "Porcentaje",
       "fixed": "Importe fijo",

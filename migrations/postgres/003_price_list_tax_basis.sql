@@ -1,0 +1,20 @@
+-- A price list now says whether its prices ALREADY carry the tax (ADR-0210).
+--
+-- Until now a price was a bare integer of cents and the tax basis lived nowhere: `sales` decided
+-- it for the whole ticket with a single global setting, so a B2B list without VAT and a retail
+-- list with VAT could not coexist in one hub without somebody guessing which was which. The
+-- guess is the bug: the same `121` is a gross price on one list and a net price on the other.
+--
+-- TRI-STATE on purpose:
+--   · 1    → the prices in this list are GROSS (the tax is inside). Retail / POS, art. 88.Uno LIVA.
+--   · 0    → the prices are the TAXABLE BASE; the tax is added on top. B2B / wholesale.
+--   · NULL → INHERIT the hub (`hub_settings.tax_mode`), and if the hub says nothing, `inclusive`.
+--
+-- NULL is not "unknown, assume something": it is "follow the hub", and the resolution order is
+-- written down (price list → hub → inclusive). Backfilling NULL to a concrete value would freeze
+-- today's hub setting into every existing list and detach it from the hub for good — so existing
+-- rows stay NULL and keep behaving exactly as they did (`sales` already defaulted to inclusive).
+--
+-- It is an INTEGER, not a BOOLEAN, like every other flag in this module: the commands bind 0/1 and
+-- Postgres does not cast integer→boolean implicitly on INSERT/UPDATE.
+ALTER TABLE pricing_price_list ADD COLUMN IF NOT EXISTS tax_included INTEGER;

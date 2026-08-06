@@ -1,29 +1,34 @@
-//! Handler WASM (Tier 2) del módulo `pricing` — motor de pricing.
-//! Portado de old_modules/m_pricing (PricingService.create_price_list /
-//! get_price / calculate_discount) según `WASM-TODO.md` §1–§3 y
-//! `architecture/modules/pricing.md`.
+//! WASM handler (Tier 2) of the `pricing` module — the pricing engine.
 //!
-//! Lógica pura, sin BD: recibe `{payload, context}` y devuelve **intenciones**
-//! (ops SQL del mismo módulo) que el host valida y ejecuta en una transacción.
-//! Todos los importes se calculan con `rust_decimal` (aritmética decimal
-//! exacta, `quantize(0.01, HALF_UP)`) — nunca `f64` (WASM-TODO.md §5).
+//! Pure logic, no DB: it receives `{payload, context}` and returns **intentions** (SQL ops of this
+//! same module) that the host validates and runs in one transaction. Every amount is computed with
+//! `rust_decimal` (exact decimal arithmetic) or in integers — **never `f64`**; the money and its
+//! single HALF_UP rounding come from `erplora_guest_sdk::money` (ADR-0123), not from here.
 //!
-//! Estado de los 3 exports declarados en `module.json`:
+//! # A price is not an integer (ADR-0210)
 //!
-//! * `create_price_list` — **operativo** con el ABI actual del host: valida
-//!   payload/fechas y devuelve `pricing._unset_default` (si `is_default`) +
-//!   `pricing._insert_price_list` en la MISMA transacción (invariante "una sola
-//!   lista default por hub"). La unicidad `(hub_id, code)` la garantiza el
-//!   índice único `uq_pricing_list_hub_code` (el host aún no entrega lecturas
-//!   pre-cargadas para devolver `duplicate_code` amigable).
-//! * `get_price` / `calculate_discount` — la lógica completa vive en
-//!   [`get_price_compute`] / [`calculate_discount_compute`] (públicas, listas
-//!   para cablear), pero el ABI actual del host (`erplora-wasm-host` +
-//!   `runtime::commands::execute_wasm`) NO entrega lecturas pre-cargadas ni
-//!   retorna el resultado de un handler read-only al caller (`Output` solo
-//!   lleva operations+events y el command responde `{ok:true}`). Hasta que el
-//!   humano defina ese contrato en el core, los exports devuelven un error
-//!   explícito `unsupported_readonly_handler`.
+//! The same `121` is a gross price on a retail list and a net price on a B2B one, and nothing in
+//! the number says which. So every quote this handler produces carries its **tax basis** (and
+//! where that basis came from), its **currency** and that currency's **precision** — and lists of
+//! different bases are never silently compared.
+//!
+//! And a discount is never handed over as a lump: with `lines`, `calculate_discount` returns the
+//! **allocation** per line (largest remainder — the parts add up to the whole exactly) plus the
+//! same thing rolled up **per tax rate**, which is the level the desglose lives at. An aggregate
+//! discount that never reaches the rates is what lets a header declare a discounted total against
+//! an undiscounted desglose (the root of `sales#23`).
+//!
+//! # The three exports
+//!
+//! * `create_price_list` — validates payload/dates and returns `pricing._unset_default` (when
+//!   `is_default`) + `pricing._insert_price_list` in the SAME transaction (invariant: one default
+//!   list per hub). `(hub_id, code)` uniqueness is enforced by the `uq_pricing_list_hub_code`
+//!   unique index.
+//! * `get_price` / `calculate_discount` — read-only. They take their rows from the host's
+//!   preloaded `context.reads` (ADR-0069) and answer through the extra `result` channel of
+//!   [`PricingOutput`], the same shape the `taxes` handler already ships: today's host
+//!   deserializes `operations`/`events` and ignores `result`, and a host that returns handler
+//!   results picks it up with no manifest change.
 
 use erplora_guest_sdk::currency as sdk_currency;
 use erplora_guest_sdk::money as sdk_money;
@@ -68,12 +73,6 @@ impl PricingOutput {
 #[cfg(feature = "guest")]
 use extism_pdk::*;
 
-/// Mensaje de los exports read-only mientras el host no soporte lecturas
-/// pre-cargadas + retorno de resultado (decisión core pendiente).
-pub const UNSUPPORTED_READONLY: &str = "unsupported_readonly_handler: el host aún no entrega \
-lecturas pre-cargadas ni retorna el resultado de un handler read-only; la lógica está lista en \
-pricing-handler::get_price_compute / calculate_discount_compute (ver WASM-TODO.md §2–§3)";
-
 #[cfg(feature = "guest")]
 #[plugin_fn]
 pub fn create_price_list(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
@@ -85,14 +84,41 @@ pub fn create_price_list(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json
 
 #[cfg(feature = "guest")]
 #[plugin_fn]
-pub fn get_price(_input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
-    Err(WithReturnCode::new(Error::msg(UNSUPPORTED_READONLY.to_string()), 1))
+pub fn get_price(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<PricingOutput>> {
+    let v = input.into_inner().into_value();
+    let payload = v.get("payload").cloned().unwrap_or(Value::Null);
+    let context = v.get("context").cloned().unwrap_or(Value::Null);
+    let lists = preloaded_rows(&context, "pricing.price_lists.list");
+    let items = preloaded_rows(&context, "pricing.price_lists.items_by_product");
+    match get_price_compute(&payload, &context, &lists, &items) {
+        Ok(result) => Ok(Json(PricingOutput::read_only(result))),
+        Err(code) => Err(WithReturnCode::new(Error::msg(code), 1)),
+    }
 }
 
 #[cfg(feature = "guest")]
 #[plugin_fn]
-pub fn calculate_discount(_input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
-    Err(WithReturnCode::new(Error::msg(UNSUPPORTED_READONLY.to_string()), 1))
+pub fn calculate_discount(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<PricingOutput>> {
+    let v = input.into_inner().into_value();
+    let payload = v.get("payload").cloned().unwrap_or(Value::Null);
+    let context = v.get("context").cloned().unwrap_or(Value::Null);
+    let rules = preloaded_rows(&context, "pricing.rules.list");
+    match calculate_discount_compute(&payload, &context, &rules) {
+        Ok(result) => Ok(Json(PricingOutput::read_only(result))),
+        Err(code) => Err(WithReturnCode::new(Error::msg(code), 1)),
+    }
+}
+
+/// Rows the host preloaded for a declared `reads` query (ADR-0069), landed in
+/// `context.reads["<query>"]`. Empty when the host did not preload — a read-only quote degrades to
+/// "no rows" instead of trusting whatever the client claims.
+pub fn preloaded_rows(context: &Value, query: &str) -> Vec<Value> {
+    context
+        .get("reads")
+        .and_then(|r| r.get(query))
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default()
 }
 
 // ───────────────────────── helpers JSON/Decimal ─────────────────────────
@@ -187,19 +213,163 @@ fn parse_date_opt(v: Option<&Value>) -> Result<Value, String> {
 
 // ─────────────── tax basis resolution + cent-exact apportionment ───────────────
 
+/// `tax_included` as stored on the price list: `1`/`0`, or absent/NULL meaning "inherit".
+///
+/// NULL is **not** "unknown, assume something": it is "follow the hub". Freezing today's hub
+/// setting into the row at creation time would silently detach the list from the hub later.
+fn basis_from_flag(v: Option<&Value>) -> Option<&'static str> {
+    match v {
+        None | Some(Value::Null) => None,
+        Some(x) => Some(if as_bool(x) { BASIS_INCLUSIVE } else { BASIS_EXCLUSIVE }),
+    }
+}
+
+/// A basis spelled out as a string (`hub_settings.tax_mode`, or a caller's `tax_basis`).
+/// Anything else is treated as **unset**, never as a guess.
+fn basis_from_mode(v: Option<&Value>) -> Option<&'static str> {
+    match opt_str(v)?.to_ascii_lowercase().as_str() {
+        BASIS_INCLUSIVE => Some(BASIS_INCLUSIVE),
+        BASIS_EXCLUSIVE => Some(BASIS_EXCLUSIVE),
+        _ => None,
+    }
+}
+
 /// Resolves the tax basis of a price list, and says WHERE the answer came from.
 ///
 /// Order: the list's own `tax_included` → the hub's `tax_mode` → [`DEFAULT_TAX_BASIS`].
-/// The returned basis is never absent: an implicit basis is exactly the ambiguity this solves.
-pub fn resolve_tax_basis(_list: &Value, _context: &Value) -> (&'static str, &'static str) {
+/// The returned basis is never absent, and its `source` is part of the answer: an implicit basis
+/// is exactly the ambiguity this resolves, so "inclusive because nobody said otherwise" and
+/// "inclusive because this list says so" must not look the same to the caller.
+pub fn resolve_tax_basis(list: &Value, context: &Value) -> (&'static str, &'static str) {
+    if let Some(b) = basis_from_flag(list.get("tax_included")) {
+        return (b, "price_list");
+    }
+    if let Some(b) = basis_from_mode(context.get("tax_mode")) {
+        return (b, "hub");
+    }
     (DEFAULT_TAX_BASIS, "default")
 }
 
 /// Splits `total` across `weights` so the parts add up to `total` **EXACTLY**.
 ///
-/// Not implemented yet.
-pub fn allocate_amount(_total: Minor, weights: &[Minor]) -> Vec<Minor> {
-    vec![0; weights.len()]
+/// # Why this is NOT [`sdk_money::round`]
+///
+/// Rounding (HALF_UP, ADR-0123) produces **one** amount from a fraction. Apportionment splits
+/// **one** amount into N without creating or destroying a cent, and rounding each share
+/// independently does not do that: 101 cts over three equal lines is 33,6667 each, and HALF_UP
+/// gives 34+34+34 = **102**. A cent out of nowhere is a desglose that no longer squares.
+///
+/// So the method is **largest remainder** (Hamilton): every line gets the floor of its exact
+/// share, and the leftover cents go one each to the lines with the biggest fractional part, ties
+/// broken by input order. Deterministic, sum-exact, and no line drifts more than one cent from
+/// its proportional share.
+///
+/// All of it in integers (`i128` intermediate): the shares are never materialised as fractions,
+/// so there is nothing to round in the first place.
+///
+/// The **sign travels**: a surcharge allocated is still a surcharge on every line. A discount is
+/// capped at the sum of the weights (nothing goes below zero); a surcharge is not capped.
+pub fn allocate_amount(total: Minor, weights: &[Minor]) -> Vec<Minor> {
+    let n = weights.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    // A negative weight is not a share of anything; it contributes nothing.
+    let w: Vec<i128> = weights.iter().map(|x| (*x as i128).max(0)).collect();
+    let w_total: i128 = w.iter().sum();
+    if w_total == 0 {
+        return vec![0; n]; // nothing to split it over — and no division by zero
+    }
+
+    let negative = total < 0;
+    let mut magnitude = (total as i128).abs();
+    if !negative && magnitude > w_total {
+        magnitude = w_total; // a discount cannot exceed what it discounts
+    }
+
+    // Exact share = magnitude * w_i / w_total. Floor + remainder, both exact in integers.
+    let mut parts: Vec<i128> = Vec::with_capacity(n);
+    let mut remainders: Vec<(i128, usize)> = Vec::with_capacity(n);
+    for (i, wi) in w.iter().enumerate() {
+        let numerator = magnitude * wi;
+        parts.push(numerator / w_total);
+        remainders.push((numerator % w_total, i));
+    }
+
+    // Leftover cents → biggest fractional part first; equal remainders keep input order.
+    let assigned: i128 = parts.iter().sum();
+    let mut leftover = magnitude - assigned;
+    remainders.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    for (rem, i) in remainders {
+        if leftover == 0 {
+            break;
+        }
+        if rem == 0 {
+            break; // no fractional part left to reward — and the sum already matches
+        }
+        parts[i] += 1;
+        leftover -= 1;
+    }
+
+    parts.into_iter().map(|p| if negative { -(p as Minor) } else { p as Minor }).collect()
+}
+
+/// A quote line as the caller hands it over: an amount and the rate that applies to it.
+///
+/// The rate is what makes the allocation fiscally safe: allocating to lines allocates to **tax
+/// rates**, which is the level at which the desglose (and VeriFactu's `DetalleDesglose`) lives.
+struct QuoteLine {
+    line_ref: String,
+    amount: Minor,
+    rate_pct: Decimal,
+    basis: Option<&'static str>,
+}
+
+/// Reads `payload.lines`. `None` = the caller sent an aggregate amount (the legacy shape).
+fn parse_quote_lines(payload: &Value) -> Result<Option<Vec<QuoteLine>>, String> {
+    let arr = match payload.get("lines") {
+        None | Some(Value::Null) => return Ok(None),
+        Some(Value::Array(a)) => a,
+        Some(_) => return Err("invalid_payload: `lines` must be null or an array".to_string()),
+    };
+    let mut out = Vec::with_capacity(arr.len());
+    for (i, l) in arr.iter().enumerate() {
+        let line_ref = opt_str(l.get("line_ref")).unwrap_or_else(|| i.to_string());
+        let amount = sdk_money::from_json(l.get("amount").unwrap_or(&Value::Null), 0);
+        if amount < 0 {
+            return Err("invalid_amount".to_string());
+        }
+        let rate_pct = dec_opt(l.get("tax_rate_pct")).unwrap_or(Decimal::ZERO);
+        out.push(QuoteLine { line_ref, amount, rate_pct, basis: basis_from_mode(l.get("tax_basis")) });
+    }
+    Ok(Some(out))
+}
+
+/// The basis of a whole quote: the payload (or its lines) → the hub → the default.
+///
+/// Lines that disagree with each other, or with the payload, are **rejected**: mixing a gross and
+/// a net amount in one order without a documented conversion is how a desglose stops squaring.
+fn resolve_quote_basis(
+    payload: &Value,
+    context: &Value,
+    lines: &[QuoteLine],
+) -> Result<(&'static str, &'static str), String> {
+    let mut declared: Option<&'static str> = basis_from_mode(payload.get("tax_basis"));
+    for l in lines {
+        if let Some(b) = l.basis {
+            match declared {
+                Some(prev) if prev != b => return Err("mixed_tax_basis".to_string()),
+                _ => declared = Some(b),
+            }
+        }
+    }
+    if let Some(b) = declared {
+        return Ok((b, "payload"));
+    }
+    if let Some(b) = basis_from_mode(context.get("tax_mode")) {
+        return Ok((b, "hub"));
+    }
+    Ok((DEFAULT_TAX_BASIS, "default"))
 }
 
 // ───────────────────── §1 create_price_list (operativo) ─────────────────────
@@ -252,6 +422,16 @@ pub fn create_price_list_pure(input: Value) -> Result<Output, String> {
     p.insert("valid_from".into(), valid_from);
     p.insert("valid_until".into(), valid_until);
     p.insert("segment".into(), segment.map(|s| json!(s)).unwrap_or(Value::Null));
+    // Tax basis of the list (ADR-0210), tri-state: 1 = prices already carry the tax, 0 = they are
+    // the taxable base, NULL = inherit the hub. NULL is stored as NULL on purpose — resolving it
+    // here would freeze today's hub setting into a list that should keep following the hub.
+    p.insert(
+        "tax_included".into(),
+        match payload.get("tax_included") {
+            None | Some(Value::Null) => Value::Null,
+            Some(v) => json!(as_bool(v) as i64),
+        },
+    );
     ops.push(Operation::sql("pricing._insert_price_list", p));
 
     // El evento `pricing.price_list.created` lo emite el host (declarado en el
@@ -259,26 +439,28 @@ pub fn create_price_list_pure(input: Value) -> Result<Output, String> {
     Ok(Output { operations: ops, events: vec![] })
 }
 
-// ─────────────── §2 get_price (lógica lista, pendiente de host) ───────────────
+// ───────────────────────── §2 get_price (read-only) ─────────────────────────
 
-/// Lógica pura de `pricing.price_lists.get_price` (WASM-TODO.md §2, read-only).
+/// Pure logic of `pricing.price_lists.get_price` (WASM-TODO.md §2, read-only).
 ///
 /// * `payload` — `{product_ref, quantity?, price_list_id?, customer_segment?}`.
-/// * `price_lists` — filas de las listas del hub (lectura pre-cargada por el
-///   host: `pricing.price_lists.list`).
-/// * `items` — filas de items del `product_ref` en esas listas (lectura
-///   pre-cargada: `pricing.price_lists.items`).
+/// * `context` — the host context; `tax_mode` is the hub-level fallback of the tax basis.
+/// * `price_lists` — the hub's list rows (host preload: `pricing.price_lists.list`).
+/// * `items` — the item rows for `product_ref` (host preload:
+///   `pricing.price_lists.items_by_product`).
 ///
-/// Devuelve `{product_ref, price, quantity, price_list_id}` con el **menor**
-/// precio entre los items cuyo bracket de cantidad matchea.
-/// Errores: `invalid_quantity`, `invalid_id`, `no_price_list`, `no_price`.
+/// Returns the **lowest** price among the items whose quantity bracket matches, **plus the whole
+/// contract that price needs to be usable** (ADR-0210): `tax_basis` and where it came from,
+/// `currency`, and the currency's `minor_unit_decimals`. A bare integer is not a price: the same
+/// `121` is a gross price on a retail list and a net price on a B2B one.
+///
+/// Errors: `invalid_quantity`, `invalid_id`, `no_price_list`, `no_price`, `mixed_tax_basis`.
 pub fn get_price_compute(
     payload: &Value,
     context: &Value,
     price_lists: &[Value],
     items: &[Value],
 ) -> Result<Value, String> {
-    let _ = context;
     let product_ref =
         as_str(payload.get("product_ref").unwrap_or(&Value::Null)).trim().to_string();
     if product_ref.is_empty() {
@@ -327,6 +509,7 @@ pub fn get_price_compute(
 
     // Matching por bracket de cantidad; mejor precio = el MENOR entre los matches.
     let mut best: Option<(Decimal, Value, String)> = None; // (price, raw_price, list_id)
+    let mut matched_lists: Vec<String> = Vec::new();
     for it in items {
         if it.get("is_deleted").map(as_bool).unwrap_or(false) {
             continue;
@@ -352,42 +535,108 @@ pub fn get_price_compute(
             Some(p) => p,
             None => continue,
         };
+        if !matched_lists.contains(&list_id) {
+            matched_lists.push(list_id.clone());
+        }
         if best.as_ref().map(|(b, _, _)| price < *b).unwrap_or(true) {
             best = Some((price, raw_price, list_id));
         }
     }
 
+    // NO IMPLICIT CONVERSION between bases (ADR-0210). Picking "the cheapest" between a gross 121
+    // and a net 100 is comparing two different magnitudes; the caller has to say which list it
+    // wants instead of getting a number whose meaning depends on which row happened to win.
+    let mut basis: Option<(&'static str, &'static str)> = None;
+    for id in &matched_lists {
+        let row = price_lists
+            .iter()
+            .find(|l| as_str(l.get("id").unwrap_or(&Value::Null)) == *id)
+            .cloned()
+            .unwrap_or(Value::Null);
+        let resolved = resolve_tax_basis(&row, context);
+        match basis {
+            Some(prev) if prev.0 != resolved.0 => return Err("mixed_tax_basis".to_string()),
+            _ => basis = Some(resolved),
+        }
+    }
+
     match best {
-        Some((_, raw_price, list_id)) => Ok(json!({
-            "product_ref": product_ref,
-            "price": raw_price,
-            "quantity": quantity.normalize().to_string(),
-            "price_list_id": list_id,
-        })),
+        Some((_, raw_price, list_id)) => {
+            let (tax_basis, basis_source) = basis.unwrap_or((DEFAULT_TAX_BASIS, "default"));
+            // The currency is the hub's (ADR-0123 §1), carried on the list row so the caller never
+            // has to assume 2 decimals: 1499 is 14,99 € but 1499 ¥.
+            let currency = price_lists
+                .iter()
+                .find(|l| as_str(l.get("id").unwrap_or(&Value::Null)) == list_id)
+                .and_then(|l| opt_str(l.get("currency")))
+                .unwrap_or_else(|| "EUR".to_string());
+            let decimals = sdk_currency::decimals_for(&currency).unwrap_or(2);
+            Ok(json!({
+                "product_ref": product_ref,
+                // Money is an INTEGER of minor units (ADR-0123) — normalised here so the caller
+                // never receives whatever shape the row happened to carry.
+                "price": sdk_money::from_json(&raw_price, 0),
+                "quantity": quantity.normalize().to_string(),
+                "price_list_id": list_id,
+                "currency": currency,
+                "minor_unit_decimals": decimals,
+                "tax_basis": tax_basis,
+                "tax_basis_source": basis_source,
+            }))
+        }
         None => Err("no_price".to_string()),
     }
 }
 
-// ─────────── §3 calculate_discount (lógica lista, pendiente de host) ───────────
+// ─────────────────────── §3 calculate_discount (read-only) ───────────────────────
 
-/// Lógica pura de `pricing.rules.calculate_discount` (WASM-TODO.md §3, read-only).
+/// Pure logic of `pricing.rules.calculate_discount` (WASM-TODO.md §3, read-only).
 ///
-/// * `payload` — `{amount, rules?, customer_segment?}`; `rules` admite null
-///   (todas las activas), lista de ids, lista de dicts inline o modo mixto.
-/// * `db_rules` — reglas activas del hub leídas por el host (lectura
-///   pre-cargada: `pricing.rules.list`); las inline llegan en el payload.
+/// * `payload` — `{amount?, lines?, tax_basis?, rules?, customer_segment?}`. `rules` accepts null
+///   (all active ones), a list of ids, a list of inline dicts, or a mix.
+/// * `context` — the host context; `tax_mode` is the hub-level fallback of the tax basis.
+/// * `db_rules` — the hub's active rules preloaded by the host (`pricing.rules.list`); inline
+///   ones arrive in the payload.
 ///
-/// Aplica las reglas por `priority` ascendente (desempate por `code`) de forma
-/// iterativa sobre el running total, con clamp a `[0, running]` y quantize 0.01.
-/// Devuelve `{original_amount, final_amount, total_discount, applied_rules}`.
-/// Error: `invalid_amount`.
+/// Rules apply by ascending `priority` (ties by `code`) over the running total, clamped to
+/// `[0, running]` and rounded to a whole cent.
+///
+/// # Two shapes, and only one of them is safe for a fiscal document (ADR-0210)
+///
+/// * `{amount}` — a single aggregate. Fine for a preview ("how much would this coupon save?"),
+///   **not** for a sale: an aggregate discount over an aggregate amount carries no lines and no
+///   tax rates, so whoever receives it has to split it by hand — and that is the split that
+///   silently unsquares the desglose.
+/// * `{lines}` — the amounts with their rates. The reply then also carries `allocation` (per
+///   line, adding up to `total_discount` **exactly**) and `by_tax_rate` (the same thing rolled up
+///   to the level the desglose actually lives at, ADR-0123 §4).
+///
+/// Order of calculation, fixed: **price → discount (allocated) → base/tax per rate → rounding**.
+///
+/// Errors: `invalid_amount`, `amount_mismatch`, `mixed_tax_basis`.
 pub fn calculate_discount_compute(
     payload: &Value,
     context: &Value,
     db_rules: &[Value],
 ) -> Result<Value, String> {
-    let _ = context;
-    let amount = dec_opt(payload.get("amount")).ok_or_else(|| "invalid_amount".to_string())?;
+    let quote_lines = parse_quote_lines(payload)?;
+    let (tax_basis, basis_source) =
+        resolve_quote_basis(payload, context, quote_lines.as_deref().unwrap_or(&[]))?;
+
+    // With lines, the amount IS the lines. An aggregate that disagrees with them is two sources of
+    // truth for one number — rejected instead of silently picking one.
+    let amount = match &quote_lines {
+        Some(lines) => {
+            let derived: Minor = lines.iter().map(|l| l.amount).sum();
+            if let Some(given) = payload.get("amount") {
+                if !given.is_null() && sdk_money::from_json(given, derived) != derived {
+                    return Err("amount_mismatch".to_string());
+                }
+            }
+            Decimal::from(derived)
+        }
+        None => dec_opt(payload.get("amount")).ok_or_else(|| "invalid_amount".to_string())?,
+    };
     if amount < Decimal::ZERO {
         return Err("invalid_amount".to_string());
     }
@@ -528,12 +777,65 @@ pub fn calculate_discount_compute(
         }));
     }
 
-    Ok(json!({
+    let total_discount = sdk_money::round(original - running);
+    let mut out = json!({
         "original_amount": money(original),
         "final_amount": money(running),
-        "total_discount": money(original - running),
+        "total_discount": total_discount,
         "applied_rules": applied,
-    }))
+        "tax_basis": tax_basis,
+        "tax_basis_source": basis_source,
+    });
+
+    // ── The allocation: the discount reaches the LINES, and through them the tax rates ──
+    if let Some(lines) = &quote_lines {
+        let weights: Vec<Minor> = lines.iter().map(|l| l.amount).collect();
+        let parts = allocate_amount(total_discount, &weights);
+
+        let allocation: Vec<Value> = lines
+            .iter()
+            .zip(parts.iter())
+            .map(|(l, d)| {
+                json!({
+                    "line_ref": l.line_ref,
+                    "amount": l.amount,
+                    "discount": d,
+                    "amount_after": l.amount - d,
+                    "tax_rate_pct": l.rate_pct.to_f64().unwrap_or(0.0),
+                })
+            })
+            .collect();
+
+        // Rolled up per TAX RATE, in order of first appearance: that is the level the desglose
+        // lives at (one `DetalleDesglose` per rate, ADR-0123 §4), and the level at which "the
+        // discount did not unsquare anything" is a checkable invariant.
+        let mut by_rate: Vec<(Decimal, Minor, Minor)> = Vec::new(); // (rate, before, discount)
+        for (l, d) in lines.iter().zip(parts.iter()) {
+            match by_rate.iter_mut().find(|(r, _, _)| *r == l.rate_pct) {
+                Some(e) => {
+                    e.1 += l.amount;
+                    e.2 += d;
+                }
+                None => by_rate.push((l.rate_pct, l.amount, *d)),
+            }
+        }
+        let by_tax_rate: Vec<Value> = by_rate
+            .iter()
+            .map(|(rate, before, disc)| {
+                json!({
+                    "tax_rate_pct": rate.to_f64().unwrap_or(0.0),
+                    "amount_before": before,
+                    "discount": disc,
+                    "amount_after": before - disc,
+                })
+            })
+            .collect();
+
+        out["allocation"] = json!(allocation);
+        out["by_tax_rate"] = json!(by_tax_rate);
+    }
+
+    Ok(out)
 }
 
 
@@ -560,6 +862,9 @@ pub fn calculate_discount_compute(
 // ADR-0210 adds the second half of the same disease: an amount whose TAX BASIS is implicit, and
 // a discount handed over as a single aggregate number that the caller has to split by hand.
 #[cfg(test)]
+// Test names SHOUT the part that matters (`..._EXACTLY`, `..._NOT_5`): the emphasis is the point
+// of the name, and a failing test should say what broke without opening the file.
+#[allow(non_snake_case)]
 mod tests {
     use super::*;
 
