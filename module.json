@@ -320,6 +320,15 @@
       ]
     }
   },
+  "events": {
+    "listen": {},
+    "emits": [
+      "pricing.price_item.added",
+      "pricing.price_list.created",
+      "pricing.rule.created",
+      "pricing.rule.deactivated"
+    ]
+  },
   "ui": {
     "entry": "dist/pricing.esm.js"
   }
