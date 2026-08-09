@@ -47,7 +47,8 @@
     "postgres": [
       "migrations/postgres/001_init.sql",
       "migrations/postgres/002_discount_amount_cents.sql",
-      "migrations/postgres/003_price_list_tax_basis.sql"
+      "migrations/postgres/003_price_list_tax_basis.sql",
+      "migrations/postgres/004_price_list_item_tenant_fk.sql"
     ]
   },
   "queries": {
@@ -229,6 +230,12 @@
       "sql": [
         "commands/price_item_add.sql"
       ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "pricing.price_list_unavailable",
+        "message": "That price list is not available: it does not exist in this business, or it has been deleted or deactivated."
+      },
       "emit": [
         "pricing.price_item.added"
       ],

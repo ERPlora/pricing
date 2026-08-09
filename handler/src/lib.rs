@@ -436,7 +436,11 @@ pub fn create_price_list_pure(input: Value) -> Result<Output, String> {
 
     // El evento `pricing.price_list.created` lo emite el host (declarado en el
     // `emit` del command en module.json); el handler no lo duplica.
-    Ok(Output { operations: ops, events: vec![] })
+    // `..Default::default()` so the literal compiles against BOTH shapes of `Output`: the one
+    // before hub#139 and the one that gained `error` (structured domain rejection). Without it the
+    // handler stops compiling the moment the hub checkout moves on, and nobody can rebuild
+    // `dist/handler.wasm` (pm#81).
+    Ok(Output { operations: ops, events: vec![], ..Default::default() })
 }
 
 // ───────────────────────── §2 get_price (read-only) ─────────────────────────
