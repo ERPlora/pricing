@@ -1,5 +1,6 @@
 {
   "name": "Precios",
+  "description": "Tarifas y reglas de precio, con descuentos y recargos por artículo.",
   "navigation": {
     "lists": {
       "label": "Tarifas"
