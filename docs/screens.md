@@ -32,7 +32,9 @@ only ever one. Requires `pricing.manage_pricing`.
 
 1. Open the list and add an item.
 2. Give the **product reference** and the **price**.
-3. Optionally set the quantity bracket: a **minimum quantity** (1 by default) and a **maximum**.
+3. Optionally set the quantity bracket: a **minimum quantity** (one unit by default) and a
+   **maximum**. Both are given in millionths of a unit — one unit is `1000000` — and both edges are
+   inclusive.
 
 The same product can appear several times in one list with different brackets — that is how volume
 pricing is expressed.
@@ -82,9 +84,10 @@ flag. Requires `pricing.manage_pricing`.
 
 ## Asking for a price
 
-Give a product reference, a quantity and optionally a customer segment or a specific list. You get
-back the price, which list it came from, the currency, the number of decimals, and **the tax basis
-with its origin** (`price_list`, `hub` or `default`).
+Give a product reference, a quantity —in millionths of a unit: `1000000` for one, `500000` for half—
+and optionally a customer segment or a specific list. You get back the price, which list it came from,
+the quantity you asked for (in the same millionths), the currency, the number of decimals, and **the
+tax basis with its origin** (`price_list`, `hub` or `default`).
 
 If the candidate lists disagree about their tax basis, the request **fails** with
 `mixed_tax_basis` — comparing a gross price with a net one is meaningless and this module refuses to
