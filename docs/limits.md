@@ -18,7 +18,7 @@
 | `pricing.price_list_unavailable` | The price list you added an item to does not exist, is not yours, or is inactive | Check the list; nothing was written and no event was emitted |
 | `no_price_list` | No candidate list matched | Create a list, or check the segment and the validity dates |
 | `no_price` | The product has no price in the candidate lists for that quantity | Add the item, or check the quantity bracket |
-| `invalid_quantity` | The quantity is not usable | Give a positive quantity |
+| `invalid_quantity` | The quantity is not a positive integer in millionths of a unit | Send `1000000` for one unit, `500000` for half — not `1` and not `0.5` |
 | `invalid_id` | A malformed identifier | Check the id |
 | **`mixed_tax_basis`** | The candidate lists disagree about gross vs net | Do not mix bases; ask for a specific list, or fix the lists |
 | `invalid_amount` | The amount is not usable | Give a valid amount in cents |
@@ -46,7 +46,7 @@
 | Currency | default `EUR` |
 | Dates | ISO `YYYY-MM-DD` |
 | Priority | lower applies first |
-| Minimum quantity | default 1; maximum optional |
+| Minimum quantity | integer in millionths of a unit; default `1000000` (one unit); maximum optional, `null` = no ceiling |
 
 ## Caps and sizes
 

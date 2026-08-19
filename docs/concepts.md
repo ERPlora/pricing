@@ -41,8 +41,24 @@ the intended behaviour; if you need "the segment list always wins", ask for that
 
 ## Quantity brackets are how volume pricing works
 
-A price list item has a minimum quantity (1 by default) and an optional maximum. The same product
-appears several times in one list, once per bracket. A quantity is priced by the bracket it falls in.
+A price list item has a minimum quantity (one unit by default) and an optional maximum. The same
+product appears several times in one list, once per bracket. A quantity is priced by the bracket it
+falls in, and **both edges are inclusive**: "from 10 to 99" includes both the 10 and the 99.
+
+### Quantities are integers of a millionth (ADR-0147)
+
+Every quantity in the API — the two edges of a bracket and the quantity you ask a price for — is an
+**integer in millionths of a unit**. One unit is `1000000`; half a kilo is `500000`. This is the same
+scale the rest of the product speaks, so a quantity travels from the till to the kitchen to the stock
+move without anyone rescaling it on the way.
+
+Two consequences worth knowing:
+
+- **A bare `1` is one millionth of a unit**, not one unit. A caller still speaking in whole units
+  will find that no bracket matches, which is deliberate: a loud `no_price` beats a wholesale price
+  charged for a single item.
+- **Fractions are refused, not rounded.** `0.5` is not a valid quantity — `500000` is. Truncating it
+  is how half a kilo used to become zero.
 
 ## Rules apply in priority order, one after another
 

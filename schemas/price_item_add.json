@@ -2,12 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "pricing.price_lists.add_item payload",
   "type": "object",
+  "$comment": "Los dos extremos del bracket van en µ (punto fijo entero, escala 10⁶ — ADR-0147 §2.1) y los dos son INCLUSIVOS: «de 10 a 99 ud» es min 10000000, max 99000000. `max_quantity` null = sin tope superior.",
   "properties": {
     "price_list_id": { "type": "string", "minLength": 1 },
     "product_ref": { "type": "string", "minLength": 1, "maxLength": 100 },
     "price": { "type": "integer" },
-    "min_quantity": { "type": ["string", "number"], "default": "1" },
-    "max_quantity": { "type": ["string", "number", "null"], "default": null }
+    "min_quantity": { "type": "integer", "minimum": 1, "default": 1000000 },
+    "max_quantity": { "type": ["integer", "null"], "minimum": 1, "default": null }
   },
   "required": ["price_list_id", "product_ref", "price"],
   "additionalProperties": false

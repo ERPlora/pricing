@@ -2,9 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "pricing.price_lists.get_price payload",
   "type": "object",
+  "$comment": "`quantity` va en µ = punto fijo entero, escala 10⁶ (ADR-0147 §2.1). Una unidad es 1000000, y un `1` pelado es una MILLONÉSIMA — por eso no se admite ni string ni decimal: un llamante que aún hable en unidades lógicas tiene que fallar de forma visible, no comprar a precio de mayorista por accidente.",
   "properties": {
     "product_ref": { "type": "string", "minLength": 1, "maxLength": 100 },
-    "quantity": { "type": ["string", "number"], "default": "1" },
+    "quantity": { "type": "integer", "minimum": 1, "default": 1000000 },
     "price_list_id": { "type": ["string", "null"], "default": null },
     "customer_segment": {
       "type": ["string", "null"],

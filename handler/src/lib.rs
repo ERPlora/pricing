@@ -33,6 +33,8 @@
 use erplora_guest_sdk::currency as sdk_currency;
 use erplora_guest_sdk::money as sdk_money;
 use erplora_guest_sdk::money::Minor;
+// ADR-0147 §2.1: las cantidades se persisten y viajan como ENTERO de punto fijo, escala 10⁶.
+use erplora_guest_sdk::units::QUANTITY_SCALE;
 use erplora_guest_sdk::{Operation, Output};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
@@ -158,6 +160,28 @@ fn dec_opt(v: Option<&Value>) -> Option<Decimal> {
     match v {
         None | Some(Value::Null) => None,
         Some(x) => dec(x),
+    }
+}
+
+/// Una CANTIDAD, en µ (punto fijo entero, escala 10⁶ — ADR-0147 §2.1).
+///
+/// Es deliberadamente estricto: acepta un entero JSON o la cadena de un entero, y **rechaza**
+/// cualquier cosa con decimales. `0.5` no es «medio µ», es un llamante que no habla el contrato, y
+/// truncarlo es exactamente cómo `as_i64` convertía 0,5 kg en 0 — el defecto que dio origen a
+/// ADR-0147. Un rechazo se ve; un truncado se cobra.
+fn micro(v: &Value) -> Option<i64> {
+    match v {
+        Value::Number(n) => n.as_i64(),
+        Value::String(s) => s.trim().parse::<i64>().ok(),
+        _ => None,
+    }
+}
+
+/// Como [`micro`] pero tratando ausencia/null como None.
+fn micro_opt(v: Option<&Value>) -> Option<i64> {
+    match v {
+        None | Some(Value::Null) => None,
+        Some(x) => micro(x),
     }
 }
 
@@ -447,7 +471,9 @@ pub fn create_price_list_pure(input: Value) -> Result<Output, String> {
 
 /// Pure logic of `pricing.price_lists.get_price` (WASM-TODO.md §2, read-only).
 ///
-/// * `payload` — `{product_ref, quantity?, price_list_id?, customer_segment?}`.
+/// * `payload` — `{product_ref, quantity?, price_list_id?, customer_segment?}`. `quantity` va en
+///   **µ** (punto fijo entero, escala 10⁶ — ADR-0147 §2.1): una unidad es `1000000`. Ausente = una
+///   unidad. Un decimal se **rechaza** (`invalid_quantity`), no se trunca.
 /// * `context` — the host context; `tax_mode` is the hub-level fallback of the tax basis.
 /// * `price_lists` — the hub's list rows (host preload: `pricing.price_lists.list`).
 /// * `items` — the item rows for `product_ref` (host preload:
@@ -470,11 +496,14 @@ pub fn get_price_compute(
     if product_ref.is_empty() {
         return Err("invalid_payload: `product_ref` no puede estar vacío".to_string());
     }
+    // La cantidad viaja en µ, como en todo el proyecto (ADR-0147 §2.1): `sales` manda `1_000_000`
+    // para una unidad, no `1`. Ausente = UNA unidad, que en µ es `QUANTITY_SCALE` — no `1`, que
+    // sería una millonésima.
     let quantity = match payload.get("quantity") {
-        None | Some(Value::Null) => Decimal::ONE,
-        Some(v) => dec(v).ok_or_else(|| "invalid_quantity".to_string())?,
+        None | Some(Value::Null) => QUANTITY_SCALE,
+        Some(v) => micro(v).ok_or_else(|| "invalid_quantity".to_string())?,
     };
-    if quantity <= Decimal::ZERO {
+    if quantity <= 0 {
         return Err("invalid_quantity".to_string());
     }
     // `price_list_id` mal formado (no-string / vacío) → invalid_id.
@@ -525,11 +554,15 @@ pub fn get_price_compute(
         if !candidate_ids.contains(&list_id) {
             continue;
         }
-        let min_q = dec_opt(it.get("min_quantity")).unwrap_or(Decimal::ONE);
+        // Bracket en µ contra cantidad en µ: comparación de ENTEROS, sin coma flotante de por
+        // medio. Mientras la columna fue `REAL`, esto comparaba 0,5 con 500000 sin dar error — el
+        // bracket contestaba un precio creíble y equivocado por un factor de un millón.
+        // Los dos extremos son INCLUSIVOS: «de 10 a 99» incluye el 10 y el 99.
+        let min_q = micro_opt(it.get("min_quantity")).unwrap_or(QUANTITY_SCALE);
         if quantity < min_q {
             continue;
         }
-        if let Some(max_q) = dec_opt(it.get("max_quantity")) {
+        if let Some(max_q) = micro_opt(it.get("max_quantity")) {
             if quantity > max_q {
                 continue;
             }
@@ -580,7 +613,10 @@ pub fn get_price_compute(
                 // Money is an INTEGER of minor units (ADR-0123) — normalised here so the caller
                 // never receives whatever shape the row happened to carry.
                 "price": sdk_money::from_json(&raw_price, 0),
-                "quantity": quantity.normalize().to_string(),
+                // µ, entero — el mismo lenguaje que habla `sale.completed` (ADR-0147 §2.1). Antes
+                // salía como la cadena de la cantidad lógica ("0.5"), que obligaba al llamante a
+                // reescalar a mano justo donde se multiplica el dinero.
+                "quantity": quantity,
                 "price_list_id": list_id,
                 "currency": currency,
                 "minor_unit_decimals": decimals,
@@ -894,13 +930,126 @@ mod tests {
         })
     }
 
-    /// A price list item row (`pricing.price_lists.items_by_product`).
+    /// A price list item row (`pricing.price_lists.items_by_product`). Quantities travel in µ
+    /// (fixed point, scale 10⁶ — ADR-0147), exactly as the column stores them.
     fn price_item(list_id: &str, product_ref: &str, price: i64) -> Value {
         json!({
             "id": format!("{list_id}-{product_ref}"), "price_list_id": list_id,
             "product_ref": product_ref, "price": price,
-            "min_quantity": 1, "max_quantity": Value::Null, "is_deleted": 0,
+            "min_quantity": QUANTITY_SCALE, "max_quantity": Value::Null, "is_deleted": 0,
         })
+    }
+
+    /// The same row with an explicit quantity BRACKET, in µ.
+    fn price_item_bracket(list_id: &str, price: i64, min_micro: i64, max_micro: Option<i64>) -> Value {
+        json!({
+            "id": format!("{list_id}-{min_micro}"), "price_list_id": list_id,
+            "product_ref": "P1", "price": price,
+            "min_quantity": min_micro,
+            "max_quantity": max_micro.map(|m| json!(m)).unwrap_or(Value::Null),
+            "is_deleted": 0,
+        })
+    }
+
+    /// `get_price` with the quantity in µ, against one list.
+    fn price_for(quantity_micro: i64, items: &[Value]) -> Result<Value, String> {
+        get_price_compute(
+            &json!({ "product_ref": "P1", "quantity": quantity_micro }),
+            &json!({}),
+            &[price_list("L1", Some(true), "EUR")],
+            items,
+        )
+    }
+
+    // ─────────────── the quantity is µ, not a float (ADR-0147, pricing#22) ───────────────
+    //
+    // `min_quantity`/`max_quantity` were the last `REAL` columns of the project. Comparing a REAL
+    // against an integer of scale 10⁶ does not raise: it silently answers a bracket that is off by
+    // a factor of a million, which is the worst kind of bug — a believable wrong price.
+
+    #[test]
+    fn HALF_A_KILO_is_500000_and_matches_the_bracket_that_starts_at_HALF_A_KILO() {
+        // 0,5 kg exactly ON the lower edge of the bracket: `min_quantity` is inclusive.
+        let items = vec![price_item_bracket("L1", 900, 500_000, None)];
+        let out = price_for(500_000, &items).expect("0,5 kg is inside [0,5 kg, ∞)");
+        assert_eq!(out["price"], json!(900));
+        assert_eq!(out["quantity"], json!(500_000), "the answer speaks µ, like the rest of the project");
+    }
+
+    #[test]
+    fn a_HAIR_UNDER_the_bracket_does_NOT_match_it() {
+        // 0,499999 kg — one µ below the edge. With floats this is where the rounding lies start.
+        let items = vec![price_item_bracket("L1", 900, 500_000, None)];
+        assert_eq!(price_for(499_999, &items), Err("no_price".to_string()));
+    }
+
+    #[test]
+    fn the_UPPER_edge_of_a_bracket_is_inclusive_too_and_the_next_micro_falls_out() {
+        let items = vec![price_item_bracket("L1", 900, 1, Some(2_500_000))];
+        assert!(price_for(2_500_000, &items).is_ok(), "2,5 is the last quantity of the bracket");
+        assert_eq!(price_for(2_500_001, &items), Err("no_price".to_string()));
+    }
+
+    #[test]
+    fn TIERS_pick_the_bracket_the_quantity_falls_in_NOT_the_cheapest_row() {
+        // 1-9 → 1,00 € · 10-99 → 0,90 € · 100+ → 0,80 €. Asking for 10 must answer 90, not 80:
+        // "the lowest price among the MATCHING items" is only sound if the matching is exact.
+        let items = vec![
+            price_item_bracket("L1", 100, 1_000_000, Some(9_999_999)),
+            price_item_bracket("L1", 90, 10_000_000, Some(99_999_999)),
+            price_item_bracket("L1", 80, 100_000_000, None),
+        ];
+        assert_eq!(price_for(1_000_000, &items).unwrap()["price"], json!(100));
+        assert_eq!(price_for(10_000_000, &items).unwrap()["price"], json!(90));
+        assert_eq!(price_for(100_000_000, &items).unwrap()["price"], json!(80));
+    }
+
+    #[test]
+    fn ONE_unit_is_1_000_000_so_a_bare_1_is_a_MILLIONTH_and_matches_nothing() {
+        // The guard against the regression this issue is about: if some caller still speaks logical
+        // units, it must FAIL LOUDLY (no bracket matches) instead of quietly buying at tier price.
+        let items = vec![price_item_bracket("L1", 90, 10_000_000, None)];
+        assert_eq!(
+            price_for(1, &items),
+            Err("no_price".to_string()),
+            "a bare `1` is one MILLIONTH of a unit — it can never reach a 10-unit tier"
+        );
+    }
+
+    #[test]
+    fn a_quantity_of_ZERO_or_less_is_still_rejected() {
+        let items = vec![price_item("L1", "P1", 100)];
+        assert_eq!(price_for(0, &items), Err("invalid_quantity".to_string()));
+        assert_eq!(price_for(-1_000_000, &items), Err("invalid_quantity".to_string()));
+    }
+
+    #[test]
+    fn a_FRACTIONAL_quantity_is_refused_at_the_door_it_is_not_truncated() {
+        // µ is an INTEGER contract. `0.5` is not "half a µ", it is a caller that never got the
+        // memo — and truncating it is exactly how `as_i64` turned 0,5 kg into 0 (ADR-0147 §1).
+        let items = vec![price_item("L1", "P1", 100)];
+        let out = get_price_compute(
+            &json!({ "product_ref": "P1", "quantity": 0.5 }),
+            &json!({}),
+            &[price_list("L1", Some(true), "EUR")],
+            &items,
+        );
+        assert_eq!(out, Err("invalid_quantity".to_string()));
+    }
+
+    #[test]
+    fn an_item_WITHOUT_a_bracket_defaults_to_ONE_UNIT_in_micro_not_to_a_bare_1() {
+        // A row whose `min_quantity` is absent must behave as "from 1 unit", i.e. 1_000_000 µ.
+        let bare = json!({
+            "id": "x", "price_list_id": "L1", "product_ref": "P1", "price": 100,
+            "is_deleted": 0,
+        });
+        assert!(price_for(1_000_000, &[bare.clone()]).is_ok(), "1 unit must match the default floor");
+        assert_eq!(
+            price_for(999_999, &[bare]),
+            Err("no_price".to_string()),
+            "a hair under one unit is below the default floor of 1 unit"
+        );
     }
 
     /// A quote line as `sales` hands it over: an amount + the rate that applies to it.

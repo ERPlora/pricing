@@ -45,7 +45,7 @@ Función WASM: `create_price_list`.
 
 ## 2. `get_price` (command `pricing.price_lists.get_price`, solo lectura)
 Origen: `PricingService.get_price`. Función WASM: `get_price`.
-- Validar: `product_ref` no vacío; parsear `quantity` (Decimal) → error `invalid_quantity`.
+- Validar: `product_ref` no vacío; parsear `quantity` como ENTERO en µ (escala 10⁶, ADR-0147; ausente = `1000000`) → error `invalid_quantity` si falta, es decimal o no es positivo.
 - **Selección de listas candidatas (lógica no-SQL-trivial):**
  1. Si llega `price_list_id`: usar **solo** esa lista (activa). `price_list_id` mal formado
  → error `invalid_id`.
