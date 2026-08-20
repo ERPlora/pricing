@@ -44,6 +44,7 @@
     "loading": "Cargando…",
     "emptyLists": "Sin listas de precios.",
     "emptyRules": "Sin reglas de descuento.",
-    "createListError": "No se pudo crear la lista"
+    "createListError": "No se pudo crear la lista",
+    "errDuplicateCode": "Ya existe una tarifa con ese código. Elige otro."
   }
 }
