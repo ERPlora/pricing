@@ -6,6 +6,8 @@ import type { DataTableColumn } from '@erplora/outfitkit';
 import { createListController } from '@erplora/module-sdk';
 // Traducción del rechazo del servidor a algo que el usuario pueda leer y corregir (pricing#29).
 import { commandError } from '../../lib/command-error';
+// La columna VALOR enseña la magnitud de cada regla CON su unidad (pricing#28).
+import { ruleValueLabel } from '../../lib/rule-value';
 import type { ListController, ListClient, ListParams, ListPage } from '@erplora/module-sdk';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC. Los textos
 // internos se resuelven con `erplora.t(CATALOG, 'ui.clave')` (idioma activo, fallback locale→en→clave).
@@ -18,6 +20,8 @@ interface ErploraClientLike extends ListClient {
   queryPage<R = unknown>(name: string, params: ListParams): Promise<ListPage<R>>;
   command<T = unknown>(name: string, payload?: Record<string, unknown>): Promise<T>;
   on(event: string, cb: (payload: unknown) => void): () => void;
+  /** Moneda del hub + formateo de dinero (ADR-0059). `formatMoney` recibe CÉNTIMOS. */
+  formatMoney(cents: number, opts?: { currency?: string; locale?: string }): string;
   /** i18n del módulo (ADR-0055): idioma activo + traducción del catálogo `ui`. */
   locale: string;
   t(catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>): string;
@@ -39,7 +43,12 @@ interface DiscountRule {
   code: string;
   name: string;
   rule_type: string;
+  /** TASA en % (reglas `percent`). Vale 0 en una regla `fixed` — ADR-0007/0123, migración 002. */
   value: string;
+  /** DINERO en céntimos (reglas `fixed`). Vale 0 en una regla `percent`. Las dos unidades van
+   *  SEPARADAS a propósito: cuando compartían columna, un descuento fijo de 5 € restaba 5
+   *  CÉNTIMOS. `rules_list.sql` ya lo proyectaba; era la columna la que no lo leía (pricing#28). */
+  amount_cents: string;
   priority: number;
 }
 
@@ -151,7 +160,17 @@ export class ErpPricingLists extends LitElement {
       options: RULE_TYPES.map((v) => ({ value: v, label: t(`ui.ruleType.${v}`) })),
       format: (r) => t(`ui.ruleType.${String(r.rule_type)}`),
     },
-    { key: 'value', header: t('ui.colValue'), align: 'right', sortable: true, filterable: true, filterType: 'range' },
+    {
+      // NI `sortable` NI `filterable`, a propósito (pricing#28). Ordenar una columna que mezcla
+      // unidades no significa nada —¿es 10 % mayor que 5 €?— y el filtro `range` corría sobre
+      // `value`, en POR CIENTO, así que un «≥ 5» no encontraba la regla de 5 €. El eje por el que
+      // de verdad se agrupa es `rule_type`, que sigue siendo ordenable y filtrable, y `priority`,
+      // que es lo que decide qué regla gana.
+      key: 'value',
+      header: t('ui.colValue'),
+      align: 'right',
+      format: (r) => ruleValueLabel(r, (c) => erplora().formatMoney(c), t),
+    },
     { key: 'priority', header: t('ui.colPriority'), align: 'right', sortable: true, filterable: true, filterType: 'text' },
     ];
   }
