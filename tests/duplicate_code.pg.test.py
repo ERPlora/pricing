@@ -28,16 +28,23 @@ and would have been ACTIVELY HARMFUL for the other:
     written" so the gate gets a chance to run at all. ✅ the issue's proposal, as written.
 
   · `pricing.price_lists.create` is **Tier 2** (WASM handler emitting `pricing._insert_price_list`).
-    The WASM path calls `db.execute_tx` — **not** `execute_tx_gated`. `expect_rows` on the private
-    intention is NEVER APPLIED there. Adding `ON CONFLICT DO NOTHING` alone would have turned a
-    loud error into a SILENT NO-OP: the panel closes, no error, and no tariff. Strictly worse than
-    the bug being fixed.
+    Until hub#1071 (merged to `develop` on 2026-08-20) the WASM path called `db.execute_tx` — not
+    `execute_tx_gated` — so `expect_rows` on a sub-command reached through a handler was NEVER
+    applied (hub#1025). Since #1071 it is, with a per-operation gate.
+
+    That fix is not in production yet: the fleet runs images pinned to TAGS. A guard that only
+    works on the new runtime fixes nobody's hub today. And adding `ON CONFLICT DO NOTHING` on its
+    own would have turned a loud error into a SILENT NO-OP on the runtime everyone is actually
+    running: the panel closes, no error, and no tariff. Strictly worse than the bug being fixed.
 
     So this path uses the documented Tier-2 mechanism instead (hub#139 / ADR-0205, the same one
     `inventory.stock.decrease` uses for `insufficient_stock`): the host pre-loads a read, the
     handler sees the collision and returns `Output.error`, and the host aborts before applying
-    anything. Its SQL therefore keeps NO `ON CONFLICT`: in the rare race that beats the read, the
-    unique index must still refuse the write rather than swallow it.
+    anything. It works on BOTH runtimes, and where it matters it is the better of the two anyway:
+    it rejects before attempting any write, and it can name the clashing code — which a fixed
+    `expect_rows.message` in the manifest cannot. Its SQL therefore keeps NO `ON CONFLICT`: in the
+    rare race that beats the read, the unique index must still refuse the write rather than
+    swallow it.
 
 ## Why the read is a dedicated query and not `price_lists.list`
 
@@ -252,12 +259,14 @@ def main() -> int:
 
     # ── 1b. TIER 2 (`pricing.price_lists.create`): a read + the handler's domain error ─────────
     print(
-        "\n· 1b. Tier 2 — expect_rows would never run here, so the handler rejects instead"
+        "\n· 1b. Tier 2 — the handler rejects first (works on the pinned runtime, and names the code)"
     )
     create = commands.get("pricing.price_lists.create", {})
     check("pricing.price_lists.create is a WASM handler", True, "handler" in create)
     check(
-        "it does NOT rely on expect_rows (the WASM path never applies it)",
+        # Not "because expect_rows would not run" any more (hub#1071 fixed that in `develop`), but
+        # because the handler check works on the pinned runtime too AND names the clashing code.
+        "it does NOT rely on expect_rows (the handler rejects first, on any runtime version)",
         False,
         "expect_rows" in create,
     )
