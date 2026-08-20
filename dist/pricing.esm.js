@@ -3097,6 +3097,34 @@ function createListController(client, queryName, onChange = () => {
   return new ListController(client, queryName, onChange, opts);
 }
 
+// modules/pricing/ui/lib/command-error.ts
+var DUPLICATE_CODE = "pricing.duplicate_code";
+var BY_CODE = {
+  [DUPLICATE_CODE]: { key: "ui.errDuplicateCode", field: "code" }
+};
+var GENERIC_KEY = "ui.createListError";
+var INTERNALS = ["sqlx", "constraint", "db:", "uq_pricing", "at line "];
+function presentable(text) {
+  const t5 = text.trim().toLowerCase();
+  return t5.length > 0 && !INTERNALS.some((mark) => t5.includes(mark));
+}
+function commandError(e5, t5) {
+  const code = typeof e5 === "object" && e5 !== null ? String(e5.code ?? "") : "";
+  const serverMessage = e5 instanceof Error ? e5.message : "";
+  const known = BY_CODE[code];
+  if (known) {
+    const translated = t5(known.key);
+    if (translated && translated !== known.key) return { message: translated, field: known.field };
+    if (presentable(serverMessage)) return { message: serverMessage, field: known.field };
+    return { message: fallback(t5), field: known.field };
+  }
+  return { message: fallback(t5), field: null };
+}
+function fallback(t5) {
+  const generic = t5(GENERIC_KEY);
+  return generic && generic !== GENERIC_KEY ? generic : "The operation could not be completed.";
+}
+
 // modules/pricing/locales/es.json
 var es_default = {
   name: "Precios",
@@ -3144,7 +3172,8 @@ var es_default = {
     loading: "Cargando\u2026",
     emptyLists: "Sin listas de precios.",
     emptyRules: "Sin reglas de descuento.",
-    createListError: "No se pudo crear la lista"
+    createListError: "No se pudo crear la lista",
+    errDuplicateCode: "Ya existe una tarifa con ese c\xF3digo. Elige otro."
   }
 };
 
@@ -3194,7 +3223,8 @@ var en_default = {
     loading: "Loading\u2026",
     emptyLists: "No price lists.",
     emptyRules: "No discount rules.",
-    createListError: "Could not create the list"
+    createListError: "Could not create the list",
+    errDuplicateCode: "A price list with that code already exists. Pick a different code."
   }
 };
 
@@ -3212,6 +3242,7 @@ var ErpPricingLists = class extends i3 {
   constructor() {
     super(...arguments);
     this.formError = "";
+    this.formErrorField = "";
     this.newCode = "";
     this.newName = "";
     this.newCurrency = "EUR";
@@ -3333,6 +3364,7 @@ var ErpPricingLists = class extends i3 {
     if (!this.newCode.trim() || !this.newName.trim()) return;
     this.saving = true;
     this.formError = "";
+    this.formErrorField = "";
     try {
       await erplora().command("pricing.price_lists.create", {
         code: this.newCode.trim(),
@@ -3352,7 +3384,9 @@ var ErpPricingLists = class extends i3 {
       this.dataTable()?.close();
       await this.listsCtrl.load();
     } catch (e5) {
-      this.formError = e5 instanceof Error ? e5.message : erplora().t(CATALOG, "ui.createListError");
+      const shown = commandError(e5, (k2) => erplora().t(CATALOG, k2));
+      this.formError = shown.message;
+      this.formErrorField = shown.field ?? "";
     } finally {
       this.saving = false;
     }
@@ -3363,16 +3397,25 @@ var ErpPricingLists = class extends i3 {
   render() {
     const t5 = (k2) => erplora().t(CATALOG, k2);
     return b2`<div class="page">
-        ${this.formError ? b2`<p class="err">${this.formError}</p>` : A}
+        ${this.formError && !this.formErrorField ? b2`<p class="err">${this.formError}</p>` : A}
         ${this.listsCtrl?.error ? b2`<p class="err">${this.listsCtrl.error}</p>` : A}
         <ok-data-table .serverSide=${true} .fill=${true} .addable=${true} .views=${true} .cardTitle=${(row) => String(row.name ?? row.code ?? "\u2014")} .columns=${this.listColumns} .rows=${this.listsCtrl?.rows ?? []} .total=${this.listsCtrl?.total ?? 0} .page=${this.listsCtrl?.state.page ?? 0} .pageSize=${this.listsCtrl?.state.pageSize ?? 50} .sort=${this.listsCtrl?.state.sort} .sortDir=${this.listsCtrl?.state.dir ?? "asc"} .searchable=${true} .searchPlaceholder=${t5("ui.searchPlaceholder")} .emptyMessage=${this.listsCtrl?.loading ? t5("ui.loading") : t5("ui.emptyLists")} @pageChange=${(e5) => this.listsCtrl.setPage(e5.detail)} @pageSizeChange=${(e5) => this.listsCtrl.setPageSize(e5.detail)} @sortChange=${(e5) => this.listsCtrl.setSort(e5.detail.sort, e5.detail.dir)} @searchChange=${(e5) => this.listsCtrl.setSearch(e5.detail)} @filterChange=${(e5) => this.listsCtrl.setFilter(e5.detail.col, e5.detail.value)}>
           <!-- Alta: se proyecta SIEMPRE (aunque el panel esté cerrado); si solo se pintara al abrir,
                el «+» de la barra desplegaría un panel vacío. -->
           <form slot="create" class="form" @submit=${(e5) => this.createList(e5)}>
-            <ion-input fill="outline" label-placement="floating" label=${t5("ui.colCode")} .value=${this.newCode} @ionInput=${(e5) => this.newCode = e5.target.value}></ion-input>
-            <ion-input fill="outline" label-placement="floating" label=${t5("ui.colName")} .value=${this.newName} @ionInput=${(e5) => this.newName = e5.target.value}></ion-input>
-            <ion-input fill="outline" label-placement="floating" label=${t5("ui.colCurrency")} .value=${this.newCurrency} @ionInput=${(e5) => this.newCurrency = e5.target.value}></ion-input>
-            <ion-select fill="outline" label-placement="floating" label=${t5("ui.colTaxBasis")} .value=${this.newTaxIncluded} @ionChange=${(e5) => this.newTaxIncluded = e5.target.value}>
+            <ion-input mode="md" fill="outline" label-placement="floating" label=${t5("ui.colCode")}
+              class=${this.formErrorField === "code" ? "ion-invalid ion-touched" : ""}
+              error-text=${this.formErrorField === "code" ? this.formError : ""}
+              .value=${this.newCode} @ionInput=${(e5) => {
+      this.newCode = e5.target.value;
+      if (this.formErrorField === "code") {
+        this.formError = "";
+        this.formErrorField = "";
+      }
+    }}></ion-input>
+            <ion-input mode="md" fill="outline" label-placement="floating" label=${t5("ui.colName")} .value=${this.newName} @ionInput=${(e5) => this.newName = e5.target.value}></ion-input>
+            <ion-input mode="md" fill="outline" label-placement="floating" label=${t5("ui.colCurrency")} .value=${this.newCurrency} @ionInput=${(e5) => this.newCurrency = e5.target.value}></ion-input>
+            <ion-select mode="md" fill="outline" label-placement="floating" label=${t5("ui.colTaxBasis")} .value=${this.newTaxIncluded} @ionChange=${(e5) => this.newTaxIncluded = e5.target.value}>
               <ion-select-option value="">${t5("ui.taxBasis.inherit")}</ion-select-option>
               <ion-select-option value="1">${t5("ui.taxBasis.included")}</ion-select-option>
               <ion-select-option value="0">${t5("ui.taxBasis.excluded")}</ion-select-option>
@@ -3389,6 +3432,9 @@ var ErpPricingLists = class extends i3 {
 __decorateClass([
   r5()
 ], ErpPricingLists.prototype, "formError", 2);
+__decorateClass([
+  r5()
+], ErpPricingLists.prototype, "formErrorField", 2);
 __decorateClass([
   r5()
 ], ErpPricingLists.prototype, "newCode", 2);

@@ -431,6 +431,37 @@ pub fn create_price_list_pure(input: Value) -> Result<Output, String> {
     let valid_from = parse_date_opt(payload.get("valid_from"))?;
     let valid_until = parse_date_opt(payload.get("valid_until"))?;
 
+    // ¿Ese código ya es de otra tarifa? (pricing#29)
+    //
+    // Antes esto lo decidía el INSERT estrellándose contra `uq_pricing_list_hub_code`, y el
+    // usuario acababa leyendo «db: sqlx: … duplicate key value violates unique constraint … at
+    // line 666». La unicidad sigue siendo del índice; lo que cambia es QUIÉN da la noticia.
+    //
+    // Aquí no vale el `expect_rows` del manifest: este command es Tier 2 y el camino WASM ejecuta
+    // sus intenciones con `db.execute_tx`, NO con `execute_tx_gated`, así que la guarda nunca
+    // correría. El mecanismo de esta capa es el de hub#139/ADR-0205 — el host pre-carga la lectura,
+    // el handler devuelve `Output.error` y el host aborta ANTES de aplicar nada, incluido el
+    // `_unset_default` de más abajo (si no, rechazar el alta dejaría al hub sin tarifa por defecto).
+    //
+    // La lectura es `code_taken`, un espejo del índice: sin bloque `list` (un `reads` sobre una
+    // query paginada solo trae la primera página, hub#650) y sin filtro de estado (una tarifa
+    // retirada sigue siendo dueña de su código). Va declarada `required`, así que si no resuelve el
+    // command se aborta en vez de degradar a un «no hay duplicado» que sería mentira.
+    // Se compara el `code` de la fila en vez de fiarse de que la lectura venga filtrada. El
+    // `reads` la filtra por `payload.code`, sí — pero si ese binding se rompiera, un handler que
+    // solo mira «¿hay filas?» rechazaría TODAS las altas, y el fallo se leería como «ya existe»
+    // sobre un código libre. Comparar aquí cuesta nada y hace que la guarda sea correcta por sí
+    // misma. Sensible a mayúsculas, como el índice.
+    let taken = preloaded_rows(&context, "pricing.price_lists.code_taken")
+        .iter()
+        .any(|row| as_str(row.get("code").unwrap_or(&Value::Null)).trim() == code);
+    if taken {
+        return Ok(Output::new().with_error(erplora_guest_sdk::DomainError::new(
+            "pricing.duplicate_code",
+            format!("A price list with the code `{code}` already exists. Pick a different code."),
+        )));
+    }
+
     let mut ops: Vec<Operation> = Vec::new();
     if is_default {
         // Invariante: baja la marca default previa ANTES del INSERT, misma tx.
@@ -1458,5 +1489,83 @@ mod tests {
         let out = create_price_list_pure(input).expect("create");
         let insert = out.operations.last().expect("insert op");
         assert_eq!(insert.params["tax_included"], Value::Null);
+    }
+
+    // ─────────────── pricing#29 · a repeated code is a DOMAIN error, not a driver crash ───────────────
+    //
+    // The shop owner used to read this, in red, at the top of the screen:
+    //
+    //     db: sqlx: error returned from database: duplicate key value violates unique constraint
+    //     "uq_pricing_list_hub_code" at line 666
+    //
+    // `expect_rows` cannot fix this one: the WASM path runs its intentions through
+    // `db.execute_tx`, not `execute_tx_gated`, so a guard on the private `_insert_price_list`
+    // would never run. The rejection has to come from here.
+
+    /// Input for `create_price_list_pure` with the `code_taken` read already preloaded by the host.
+    fn create_input(code: &str, taken: &[&str]) -> Value {
+        let rows: Vec<Value> = taken
+            .iter()
+            .map(|c| json!({ "id": format!("existing-{c}"), "code": c }))
+            .collect();
+        json!({
+            "payload": { "code": code, "name": "Tarifa general" },
+            "context": {
+                "new_ids": ["list-1"],
+                "reads": { "pricing.price_lists.code_taken": rows },
+            },
+        })
+    }
+
+    #[test]
+    fn a_repeated_code_is_rejected_with_a_stable_namespaced_code() {
+        let out = create_price_list_pure(create_input("PVP", &["PVP"])).expect("no panic");
+        let err = out.error.as_ref().expect("the duplicate must be REJECTED, not written");
+        assert_eq!(err.code, "pricing.duplicate_code");
+    }
+
+    #[test]
+    fn the_rejection_names_the_offending_code_and_leaks_nothing_of_the_engine() {
+        let out = create_price_list_pure(create_input("PVP", &["PVP"])).expect("no panic");
+        let message = out.error.as_ref().expect("rejected").message.to_lowercase();
+        // It has to be actionable: the owner must know WHICH code clashed.
+        assert!(message.contains("pvp"), "the message must name the code: {message}");
+        // And it must not republish the insides the way the raw error did.
+        for leak in ["sqlx", "constraint", "db:", "uq_pricing", "line 666"] {
+            assert!(!message.contains(leak), "the message leaks `{leak}`: {message}");
+        }
+    }
+
+    #[test]
+    fn a_rejected_creation_writes_NOTHING_at_all() {
+        // Including the `_unset_default` that would otherwise run first: rejecting the creation
+        // must not leave the hub without a default tariff.
+        let mut input = create_input("PVP", &["PVP"]);
+        input["payload"]["is_default"] = json!(true);
+        let out = create_price_list_pure(input).expect("no panic");
+        assert!(out.error.is_some(), "rejected");
+        assert!(
+            out.operations.is_empty(),
+            "a rejected creation emitted operations: {:?}",
+            out.operations
+        );
+        assert!(out.events.is_empty(), "a rejected creation emitted events");
+    }
+
+    #[test]
+    fn a_free_code_is_still_created_normally() {
+        // The guard must reject DUPLICATES, not creations. Without this, a handler that always
+        // returned the error would pass every test above.
+        let out = create_price_list_pure(create_input("PVP2", &["PVP"])).expect("no panic");
+        assert!(out.error.is_none(), "a free code was rejected: {:?}", out.error);
+        let insert = out.operations.last().expect("insert op");
+        assert_eq!(insert.params["code"], json!("PVP2"));
+    }
+
+    #[test]
+    fn an_empty_read_means_the_code_is_free() {
+        let out = create_price_list_pure(create_input("PVP", &[])).expect("no panic");
+        assert!(out.error.is_none(), "no rows preloaded = nothing taken");
+        assert!(!out.operations.is_empty(), "it should have created the list");
     }
 }

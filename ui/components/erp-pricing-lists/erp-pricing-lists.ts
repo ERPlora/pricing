@@ -4,6 +4,8 @@ import { define } from '@erplora/outfitkit/define';
 import '@erplora/outfitkit/ok-data-table';
 import type { DataTableColumn } from '@erplora/outfitkit';
 import { createListController } from '@erplora/module-sdk';
+// Traducción del rechazo del servidor a algo que el usuario pueda leer y corregir (pricing#29).
+import { commandError } from '../../lib/command-error';
 import type { ListController, ListClient, ListParams, ListPage } from '@erplora/module-sdk';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC. Los textos
 // internos se resuelven con `erplora.t(CATALOG, 'ui.clave')` (idioma activo, fallback locale→en→clave).
@@ -69,6 +71,10 @@ export class ErpPricingLists extends LitElement {
   `;
 
   @state() formError = '';
+  /** Campo del formulario al que cuelga `formError` (`'code'`), o '' si es del formulario entero
+   *  (pricing#29). Un «ya existe ese código» tiene que marcar el campo Código, no una banda roja
+   *  suelta arriba del listado que no dice cuál de los cuatro campos hay que tocar. */
+  @state() formErrorField = '';
 
   @state() newCode = '';
 
@@ -204,6 +210,7 @@ export class ErpPricingLists extends LitElement {
     if (!this.newCode.trim() || !this.newName.trim()) return;
     this.saving = true;
     this.formError = '';
+    this.formErrorField = '';
     try {
       await erplora().command('pricing.price_lists.create', {
         code: this.newCode.trim(),
@@ -223,7 +230,11 @@ export class ErpPricingLists extends LitElement {
       this.dataTable()?.close(); // el panel de alta se cierra solo tras crear
       await this.listsCtrl.load(); // (además del evento; garantiza refresco inmediato)
     } catch (e) {
-      this.formError = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.createListError');
+      // NUNCA `e.message` en crudo: ese era el camino por el que salía a pantalla el
+      // «db: sqlx: … duplicate key value violates unique constraint … at line 666».
+      const shown = commandError(e, (k) => erplora().t(CATALOG, k));
+      this.formError = shown.message;
+      this.formErrorField = shown.field ?? '';
     } finally {
       this.saving = false;
     }
@@ -235,16 +246,19 @@ export class ErpPricingLists extends LitElement {
   render() {
     const t = (k: string): string => erplora().t(CATALOG, k);
     return html`<div class="page">
-        ${this.formError ? html`<p class="err">${this.formError}</p>` : nothing}
+        ${this.formError && !this.formErrorField ? html`<p class="err">${this.formError}</p>` : nothing}
         ${this.listsCtrl?.error ? html`<p class="err">${this.listsCtrl.error}</p>` : nothing}
         <ok-data-table .serverSide=${true} .fill=${true} .addable=${true} .views=${true} .cardTitle=${(row: Record<string, unknown>) => String(row.name ?? row.code ?? '—')} .columns=${this.listColumns} .rows=${this.listsCtrl?.rows ?? []} .total=${this.listsCtrl?.total ?? 0} .page=${this.listsCtrl?.state.page ?? 0} .pageSize=${this.listsCtrl?.state.pageSize ?? 50} .sort=${this.listsCtrl?.state.sort} .sortDir=${this.listsCtrl?.state.dir ?? 'asc'} .searchable=${true} .searchPlaceholder=${t('ui.searchPlaceholder')} .emptyMessage=${this.listsCtrl?.loading ? t('ui.loading') : t('ui.emptyLists')} @pageChange=${(e: CustomEvent<number>) => this.listsCtrl.setPage(e.detail)} @pageSizeChange=${(e: CustomEvent<number>) => this.listsCtrl.setPageSize(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.listsCtrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.listsCtrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.listsCtrl.setFilter(e.detail.col, e.detail.value)}>
           <!-- Alta: se proyecta SIEMPRE (aunque el panel esté cerrado); si solo se pintara al abrir,
                el «+» de la barra desplegaría un panel vacío. -->
           <form slot="create" class="form" @submit=${(e: Event) => this.createList(e)}>
-            <ion-input fill="outline" label-placement="floating" label=${t('ui.colCode')} .value=${this.newCode} @ionInput=${(e: any) => (this.newCode = e.target.value)}></ion-input>
-            <ion-input fill="outline" label-placement="floating" label=${t('ui.colName')} .value=${this.newName} @ionInput=${(e: any) => (this.newName = e.target.value)}></ion-input>
-            <ion-input fill="outline" label-placement="floating" label=${t('ui.colCurrency')} .value=${this.newCurrency} @ionInput=${(e: any) => (this.newCurrency = e.target.value)}></ion-input>
-            <ion-select fill="outline" label-placement="floating" label=${t('ui.colTaxBasis')} .value=${this.newTaxIncluded} @ionChange=${(e: any) => (this.newTaxIncluded = e.target.value)}>
+            <ion-input mode="md" fill="outline" label-placement="floating" label=${t('ui.colCode')}
+              class=${this.formErrorField === 'code' ? 'ion-invalid ion-touched' : ''}
+              error-text=${this.formErrorField === 'code' ? this.formError : ''}
+              .value=${this.newCode} @ionInput=${(e: any) => { this.newCode = e.target.value; if (this.formErrorField === 'code') { this.formError = ''; this.formErrorField = ''; } }}></ion-input>
+            <ion-input mode="md" fill="outline" label-placement="floating" label=${t('ui.colName')} .value=${this.newName} @ionInput=${(e: any) => (this.newName = e.target.value)}></ion-input>
+            <ion-input mode="md" fill="outline" label-placement="floating" label=${t('ui.colCurrency')} .value=${this.newCurrency} @ionInput=${(e: any) => (this.newCurrency = e.target.value)}></ion-input>
+            <ion-select mode="md" fill="outline" label-placement="floating" label=${t('ui.colTaxBasis')} .value=${this.newTaxIncluded} @ionChange=${(e: any) => (this.newTaxIncluded = e.target.value)}>
               <ion-select-option value="">${t('ui.taxBasis.inherit')}</ion-select-option>
               <ion-select-option value="1">${t('ui.taxBasis.included')}</ion-select-option>
               <ion-select-option value="0">${t('ui.taxBasis.excluded')}</ion-select-option>

@@ -43,6 +43,7 @@
     "loading": "Loading…",
     "emptyLists": "No price lists.",
     "emptyRules": "No discount rules.",
-    "createListError": "Could not create the list"
+    "createListError": "Could not create the list",
+    "errDuplicateCode": "A price list with that code already exists. Pick a different code."
   }
 }

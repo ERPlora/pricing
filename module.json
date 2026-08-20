@@ -118,6 +118,10 @@
         "description": "Retrieves the full detail of a specific price list."
       }
     },
+    "pricing.price_lists.code_taken": {
+      "permission": "pricing.view_pricing",
+      "sql": "queries/price_list_code_taken.sql"
+    },
     "pricing.price_lists.items": {
       "permission": "pricing.view_pricing",
       "sql": "queries/price_list_items.sql",
@@ -212,6 +216,15 @@
     "pricing.price_lists.create": {
       "permission": "pricing.manage_pricing",
       "schema": "schemas/price_list_create.json",
+      "reads": [
+        {
+          "query": "pricing.price_lists.code_taken",
+          "params": {
+            "code": "payload.code"
+          },
+          "required": true
+        }
+      ],
       "handler": {
         "type": "wasm",
         "file": "dist/handler.wasm",
@@ -251,6 +264,12 @@
       "sql": [
         "commands/rule_create.sql"
       ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "pricing.duplicate_code",
+        "message": "A discount rule with that code already exists. Pick a different code."
+      },
       "emit": [
         "pricing.rule.created"
       ],
