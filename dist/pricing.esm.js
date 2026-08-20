@@ -3125,6 +3125,26 @@ function fallback(t5) {
   return generic && generic !== GENERIC_KEY ? generic : "The operation could not be completed.";
 }
 
+// modules/pricing/ui/lib/rule-value.ts
+var NO_SINGLE_VALUE_KEY = "ui.ruleValueNotApplicable";
+var DASH = "\u2014";
+function num(v3) {
+  const n6 = typeof v3 === "string" ? Number(v3) : v3;
+  return Number.isFinite(n6) ? n6 : 0;
+}
+function ruleValueLabel(rule, formatMoney, t5) {
+  switch (String(rule.rule_type ?? "")) {
+    case "fixed":
+      return formatMoney(num(rule.amount_cents));
+    case "percent":
+      return `${num(rule.value)} %`;
+    default: {
+      const label = t5(NO_SINGLE_VALUE_KEY);
+      return label && label !== NO_SINGLE_VALUE_KEY ? label : DASH;
+    }
+  }
+}
+
 // modules/pricing/locales/es.json
 var es_default = {
   name: "Precios",
@@ -3173,7 +3193,8 @@ var es_default = {
     emptyLists: "Sin listas de precios.",
     emptyRules: "Sin reglas de descuento.",
     createListError: "No se pudo crear la lista",
-    errDuplicateCode: "Ya existe una tarifa con ese c\xF3digo. Elige otro."
+    errDuplicateCode: "Ya existe una tarifa con ese c\xF3digo. Elige otro.",
+    ruleValueNotApplicable: "\u2014"
   }
 };
 
@@ -3224,7 +3245,8 @@ var en_default = {
     emptyLists: "No price lists.",
     emptyRules: "No discount rules.",
     createListError: "Could not create the list",
-    errDuplicateCode: "A price list with that code already exists. Pick a different code."
+    errDuplicateCode: "A price list with that code already exists. Pick a different code.",
+    ruleValueNotApplicable: "\u2014"
   }
 };
 
@@ -3317,7 +3339,17 @@ var ErpPricingLists = class extends i3 {
         options: RULE_TYPES.map((v3) => ({ value: v3, label: t5(`ui.ruleType.${v3}`) })),
         format: (r6) => t5(`ui.ruleType.${String(r6.rule_type)}`)
       },
-      { key: "value", header: t5("ui.colValue"), align: "right", sortable: true, filterable: true, filterType: "range" },
+      {
+        // NI `sortable` NI `filterable`, a propósito (pricing#28). Ordenar una columna que mezcla
+        // unidades no significa nada —¿es 10 % mayor que 5 €?— y el filtro `range` corría sobre
+        // `value`, en POR CIENTO, así que un «≥ 5» no encontraba la regla de 5 €. El eje por el que
+        // de verdad se agrupa es `rule_type`, que sigue siendo ordenable y filtrable, y `priority`,
+        // que es lo que decide qué regla gana.
+        key: "value",
+        header: t5("ui.colValue"),
+        align: "right",
+        format: (r6) => ruleValueLabel(r6, (c5) => erplora().formatMoney(c5), t5)
+      },
       { key: "priority", header: t5("ui.colPriority"), align: "right", sortable: true, filterable: true, filterType: "text" }
     ];
   }

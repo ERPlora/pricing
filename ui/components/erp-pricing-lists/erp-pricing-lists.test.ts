@@ -29,6 +29,8 @@ beforeEach(() => {
       return {};
     },
     on: () => () => {},
+    // Contrato REAL del SDK: recibe CÉNTIMOS y divide (ADR-0007).
+    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
     locale: 'es',
     t: (_catalog: unknown, key: string) => key,
   };
@@ -170,5 +172,58 @@ describe('el alta sigue funcionando desde el panel', () => {
     expect(alta!.payload.code).toBe('VIP');
     expect(alta!.payload.currency).toBe('EUR');
     expect(cerrado, 'el panel de alta se queda abierto tras crear').toBe(1);
+  });
+});
+
+describe('la columna VALOR enseña la magnitud de cada regla CON su unidad (pricing#28)', () => {
+  // La tabla decía «Importe fijo · VALOR 0» para una regla que restaba 5,00 € de cada ticket: la
+  // columna leía `value` (la TASA en %) y nunca `amount_cents` (el DINERO). El helper está
+  // probado aparte en `ui/lib/rule-value.test.ts`; esto comprueba que la COLUMNA lo usa — un
+  // helper correcto que nadie llama no arregla ninguna pantalla.
+  function columnaValor(el: HTMLElement & { shadowRoot: ShadowRoot }) {
+    const cols = (el as unknown as {
+      ruleColumns: { key: string; sortable?: boolean; filterable?: boolean;
+                     format?: (r: Record<string, unknown>) => string }[];
+    }).ruleColumns;
+    return cols.find((c) => c.key === 'value')!;
+  }
+
+  it('una regla `fixed` de 500 céntimos sale como 5,00 € en la tabla, no como 0', async () => {
+    const el = await montar();
+    expect(columnaValor(el).format!({ rule_type: 'fixed', value: '0', amount_cents: '500' }))
+      .toBe('5.00 €');
+  });
+
+  it('una regla `percent` de 10 sale como 10 %', async () => {
+    const el = await montar();
+    expect(columnaValor(el).format!({ rule_type: 'percent', value: '10', amount_cents: '0' }))
+      .toBe('10 %');
+  });
+
+  it('la columna tiene `format` — sin él vuelve a pintar el campo crudo', async () => {
+    const el = await montar();
+    expect(columnaValor(el).format, 'la columna VALOR se quedó sin format').toBeTypeOf('function');
+  });
+
+  it('NO es ordenable: ordenar unidades mezcladas no significa nada', async () => {
+    const el = await montar();
+    expect(columnaValor(el).sortable ?? false).toBe(false);
+  });
+
+  it('NO es filtrable: el `range` corría sobre `value`, en POR CIENTO', async () => {
+    const el = await montar();
+    expect(columnaValor(el).filterable ?? false).toBe(false);
+  });
+
+  it('pero TIPO y PRIORIDAD siguen siendo ordenables y filtrables (son los ejes reales)', async () => {
+    const el = await montar();
+    const cols = (el as unknown as {
+      ruleColumns: { key: string; sortable?: boolean; filterable?: boolean }[];
+    }).ruleColumns;
+    for (const key of ['rule_type', 'priority']) {
+      const c = cols.find((x) => x.key === key)!;
+      expect(c.sortable, `${key} dejó de ser ordenable`).toBe(true);
+      expect(c.filterable, `${key} dejó de ser filtrable`).toBe(true);
+    }
   });
 });
