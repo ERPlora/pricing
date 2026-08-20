@@ -437,11 +437,25 @@ pub fn create_price_list_pure(input: Value) -> Result<Output, String> {
     // usuario acababa leyendo «db: sqlx: … duplicate key value violates unique constraint … at
     // line 666». La unicidad sigue siendo del índice; lo que cambia es QUIÉN da la noticia.
     //
-    // Aquí no vale el `expect_rows` del manifest: este command es Tier 2 y el camino WASM ejecuta
-    // sus intenciones con `db.execute_tx`, NO con `execute_tx_gated`, así que la guarda nunca
-    // correría. El mecanismo de esta capa es el de hub#139/ADR-0205 — el host pre-carga la lectura,
-    // el handler devuelve `Output.error` y el host aborta ANTES de aplicar nada, incluido el
-    // `_unset_default` de más abajo (si no, rechazar el alta dejaría al hub sin tarifa por defecto).
+    // Aquí NO se delega en el `expect_rows` del manifest, y conviene saber por qué con precisión:
+    //
+    //   · Hasta hub#1071 (mergeado a `develop` el 2026-08-20) el camino WASM ejecutaba sus
+    //     intenciones con `db.execute_tx`, NO con `execute_tx_gated`: el `expect_rows` de un
+    //     sub-command alcanzado por un handler NUNCA se miraba (hub#1025). Desde #1071 sí, con una
+    //     gate por operación.
+    //   · Pero la flota corre imágenes PINEADAS A TAGS, así que ese arreglo todavía no está en
+    //     producción. Una guarda que solo funcione en el runtime nuevo no arregla el hub de nadie.
+    //
+    // La comprobación en el handler funciona en LAS DOS versiones, y además es mejor donde importa:
+    // rechaza ANTES de intentar escribir y puede nombrar el código que choca, cosa que un mensaje
+    // de `expect_rows` —fijo en el manifest— no puede hacer. Es el mecanismo de hub#139/ADR-0205:
+    // el host pre-carga la lectura, el handler devuelve `Output.error` y el host aborta antes de
+    // aplicar nada, incluido el `_unset_default` de más abajo (si no, rechazar el alta dejaría al
+    // hub sin tarifa por defecto).
+    //
+    // Y por eso `commands/price_list_create.sql` sigue SIN `ON CONFLICT`: en la carrera que le gane
+    // a esta lectura, el índice tiene que negarse a escribir. Tragarse la fila en silencio sería
+    // peor que el error crudo que esta issue vino a quitar.
     //
     // La lectura es `code_taken`, un espejo del índice: sin bloque `list` (un `reads` sobre una
     // query paginada solo trae la primera página, hub#650) y sin filtro de estado (una tarifa
