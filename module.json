@@ -77,13 +77,13 @@
         "default_dir": "asc",
         "filters": {
           "code": {
-            "op": "eq"
+            "op": "like"
           },
           "name": {
             "op": "like"
           },
           "currency": {
-            "op": "eq"
+            "op": "like"
           },
           "is_default": {
             "op": "eq"
@@ -166,7 +166,7 @@
         "default_dir": "asc",
         "filters": {
           "code": {
-            "op": "eq"
+            "op": "like"
           },
           "name": {
             "op": "like"
@@ -202,7 +202,7 @@
             "op": "eq"
           },
           "priority": {
-            "op": "eq"
+            "op": "range"
           }
         },
         "page_size": 50

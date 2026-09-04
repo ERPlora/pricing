@@ -171,7 +171,7 @@ export class ErpPricingLists extends LitElement {
       align: 'right',
       format: (r) => ruleValueLabel(r, (c) => erplora().formatMoney(c), t),
     },
-    { key: 'priority', header: t('ui.colPriority'), align: 'right', sortable: true, filterable: true, filterType: 'text' },
+    { key: 'priority', header: t('ui.colPriority'), align: 'right', sortable: true, filterable: true, filterType: 'range' },
     ];
   }
 
