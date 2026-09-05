@@ -5,6 +5,10 @@
       "label": "Price Lists"
     }
   },
+  "errors": {
+    "pricing.duplicate_code": "That code is already in use. Pick a different one.",
+    "pricing.price_list_unavailable": "That price list is not available: it does not exist in this business, or it has been deleted or deactivated."
+  },
   "ui": {
     "title": "Price lists",
     "rulesTitle": "Discount rules",

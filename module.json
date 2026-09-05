@@ -340,6 +340,10 @@
       ]
     }
   },
+  "errors": {
+    "pricing.duplicate_code": {},
+    "pricing.price_list_unavailable": {}
+  },
   "events": {
     "listen": {},
     "emits": [

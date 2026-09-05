@@ -6,6 +6,10 @@
       "label": "Tarifas"
     }
   },
+  "errors": {
+    "pricing.duplicate_code": "Ese código ya está en uso. Elige otro.",
+    "pricing.price_list_unavailable": "Esa tarifa no está disponible: no existe en este negocio, o se ha borrado o desactivado."
+  },
   "ui": {
     "title": "Listas de precios",
     "rulesTitle": "Reglas de descuento",
