@@ -3439,6 +3439,10 @@ var es_default = {
       label: "Tarifas"
     }
   },
+  errors: {
+    "pricing.duplicate_code": "Ese c\xF3digo ya est\xE1 en uso. Elige otro.",
+    "pricing.price_list_unavailable": "Esa tarifa no est\xE1 disponible: no existe en este negocio, o se ha borrado o desactivado."
+  },
   ui: {
     title: "Listas de precios",
     rulesTitle: "Reglas de descuento",
@@ -3490,6 +3494,10 @@ var en_default = {
     lists: {
       label: "Price Lists"
     }
+  },
+  errors: {
+    "pricing.duplicate_code": "That code is already in use. Pick a different one.",
+    "pricing.price_list_unavailable": "That price list is not available: it does not exist in this business, or it has been deleted or deactivated."
   },
   ui: {
     title: "Price lists",
