@@ -1,7 +1,7 @@
 {
   "name": "@erplora/module-pricing",
   "private": true,
-  "version": "1.1.16",
+  "version": "1.1.17",
   "type": "module",
   "description": "Módulo pricing (listas de precios + reglas de descuento; manifest declarativo + Web Component Lit). Se compila con @erplora/module-cli.",
   "dependencies": {
