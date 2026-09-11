@@ -298,6 +298,25 @@ const TEST_ATTR = /(?<![\w-])(data-test[\w-]*)\s*=\s*("[^"]*"|'[^']*')?/g;
  */
 const TESTID_SPELLING = /(?<![\w-])(v-bind:data-testid|:data-testid|data-testid)\s*=\s*("|'|\$\{|[^\s>])/g;
 
+/**
+ * Every hook of a source written in a spelling no rule above reads.
+ *
+ * The two legal ones are `data-testid="…"` and `data-testid=${…}` — the second is not decoration
+ * somebody happens to prefer: it is the ONLY way to write the hook of a ROW, which carries its
+ * identity at the end (`pricing-row-${id}`) and can therefore never be a literal. Rejecting it
+ * here would turn the one spelling the convention demands for a list into a red guard, over a hook
+ * written exactly right.
+ */
+const misspellings = (source: string): string[] => {
+  const offenders: string[] = [];
+  TESTID_SPELLING.lastIndex = 0;
+  for (let m = TESTID_SPELLING.exec(source); m; m = TESTID_SPELLING.exec(source)) {
+    const legal = m[1] === 'data-testid' && (m[2] === '"' || m[2] === '${');
+    if (!legal) offenders.push(`${m[1]}=${m[2]}`);
+  }
+  return offenders;
+};
+
 function tsFiles(dir: string, found: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
@@ -466,12 +485,7 @@ describe('data-testid — the module UI convention (pricing#39)', () => {
   it('a hook is spelled data-testid="…" or data-testid=${…}, and nothing else', () => {
     const offenders: string[] = [];
     for (const { name, source } of ALL_SOURCES) {
-      TESTID_SPELLING.lastIndex = 0;
-      for (let m = TESTID_SPELLING.exec(source); m; m = TESTID_SPELLING.exec(source)) {
-        if (m[1] !== 'data-testid' || (m[2] !== '"' && m[2] !== '$')) {
-          offenders.push(`${name}: ${m[1]}=${m[2]}`);
-        }
-      }
+      for (const bad of misspellings(source)) offenders.push(`${name}: ${bad}`);
     }
     expect(
       offenders,
@@ -612,5 +626,33 @@ describe('the guard reads a Lit open tag, not a JavaScript one (pricing#39)', ()
       unnamedTables(source),
       'ok-data-table reads `testid`, not `data-testid`: with the wrong one its chrome stays unnamed',
     ).toEqual(['<ok-data-table> line 1']);
+  });
+
+  it('lets a COMPUTED hook through: it is the only way to write the hook of a row', () => {
+    // `data-testid=${…}` is not an alternative spelling somebody happens to prefer: a row carries
+    // its identity at the end (`pricing-row-${id}`, never its index), so its hook CANNOT be a
+    // literal. Reading it as a misspelling turns the guard red on the one shape the convention
+    // demands for a list — and the author's only way out is to stop naming the rows, which is
+    // exactly what this file exists to prevent (pricing#41).
+    const source = 'html`<ion-button data-testid=${`pricing-row-${row.id}`}></ion-button>`';
+    expect(misspellings(source), 'the rules above read this shape: it is legal').toEqual([]);
+  });
+
+  it('still denies the spellings no rule reads', () => {
+    // The fix above must not turn into «anything after the `=` goes»: a single-quoted value and the
+    // two Vue bindings are hooks this file never sees, and stopping them is why the rule exists.
+    expect(misspellings(`html\`<ion-input data-testid='pricing-code'></ion-input>\``)).toEqual([
+      "data-testid='",
+    ]);
+    expect(misspellings(`html\`<ion-input :data-testid="pricing-code"></ion-input>\``)).toEqual([
+      ':data-testid="',
+    ]);
+    expect(
+      misspellings(`html\`<ion-input v-bind:data-testid="pricing-code"></ion-input>\``),
+    ).toEqual(['v-bind:data-testid="']);
+    expect(
+      misspellings(`html\`<ion-input data-testid=pricing-code></ion-input>\``),
+      'an unquoted value ends at the first space: the name is whatever Lit happens to read',
+    ).toEqual(['data-testid=p']);
   });
 });
