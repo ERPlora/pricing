@@ -193,7 +193,7 @@ type Hook = { literal?: string; head?: string };
  */
 function hooks(source: string): Hook[] {
   const found: Hook[] = [];
-  const re = /(?<![\w-])data-testid\s*=\s*/g;
+  const re = /(?<![:\w-])data-testid\s*=\s*/g;
   for (let m = re.exec(source); m; m = re.exec(source)) {
     const at = m.index + m[0].length;
     const raw = source[at] === '"' || source[at] === "'" ? quoted(source, at) : braced(source, at);
@@ -229,11 +229,15 @@ function staticHead(raw: string): string {
   return cut === -1 ? '' : body.slice(0, cut);
 }
 
-/** Carries a hook, literal or computed. */
-const hasHook = (open: string): boolean => /(?<![\w-])data-testid\s*=/.test(open);
+/**
+ * Carries a hook, literal or computed. The `:` in the lookbehind is what keeps `:data-testid` — the
+ * Vue spelling, which in Lit reaches the DOM as an attribute whose NAME starts with a colon — from
+ * passing for one: it is denied below, and no rule up here may count it as alive.
+ */
+const hasHook = (open: string): boolean => /(?<![:\w-])data-testid\s*=/.test(open);
 
 /** The namespace an `<ok-data-table>` hands to its chrome, written literally. */
-const TABLE_TESTID = /(?<![\w-])testid\s*=\s*"([^"]*)"/;
+const TABLE_TESTID = /(?<![:\w-])testid\s*=\s*"([^"]*)"/;
 
 type Element = { tag: string; line: number; open: string };
 
@@ -574,6 +578,32 @@ describe('the guard reads a Lit open tag, not a JavaScript one (pricing#39)', ()
   it('sees the testid of a table written after an interpolated property', () => {
     const source = `html\`<ok-data-table .rows=\${this.rows} testid="pricing-table" .columns=\${this.cols}></ok-data-table>\``;
     expect(unnamedTables(source), 'the namespace is there, after the first `${…}`').toEqual([]);
+  });
+
+  it('does not read a Vue-spelled hook as if it were a hook', () => {
+    // `:data-testid` is the spelling rule's business, and it does catch it — but a dead hook that
+    // every OTHER rule counts as alive is a hole one relaxed regex away from opening: the contract
+    // keeps declaring the name, the coverage rule sees the control as hooked, and only one of the
+    // five rules is left standing between QA and a `getByTestId` that resolves nothing. In Lit the
+    // colon is not a binding: the attribute reaches the DOM called `:data-testid`. So it is not a
+    // hook here, and the rules that read hooks must not see one (modifiers#9, tables#86).
+    const source = `html\`<ion-input :data-testid="pricing-code"></ion-input>\``;
+    expect(
+      unhooked(source),
+      'a hook Lit renders with a colon in its NAME is no hook: the control is still unnamed',
+    ).toEqual(['<ion-input> line 1']);
+    expect(
+      hooks(source).map((h) => h.literal ?? h.head),
+      'counting it as a literal would keep the contract green over a name QA cannot reach',
+    ).toEqual([]);
+  });
+
+  it('does not read a Vue-spelled table namespace as if it were one', () => {
+    const source = `html\`<ok-data-table :testid="pricing-table" .rows=\${this.rows}></ok-data-table>\``;
+    expect(
+      unnamedTables(source),
+      'ok-data-table reads `testid`: with a colon in front its chrome paints no hook at all',
+    ).toEqual(['<ok-data-table> line 1']);
   });
 
   it('does not take the data-testid of a control for the testid of a table', () => {
