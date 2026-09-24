@@ -1,5 +1,6 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { state } from 'lit/decorators.js';
+import { classMap } from 'lit/directives/class-map.js';
 import { define } from '@erplora/outfitkit/define';
 import '@erplora/outfitkit/ok-data-table';
 import type { DataTableColumn } from '@erplora/outfitkit';
@@ -273,7 +274,7 @@ export class ErpPricingLists extends LitElement {
           <form slot="create" class="form" data-testid="pricing-form" @submit=${(e: Event) => this.createList(e)}>
             <ion-input mode="md" fill="outline" label-placement="floating" label=${t('ui.colCode')}
               data-testid="pricing-code"
-              class=${this.formErrorField === 'code' ? 'ion-invalid ion-touched' : ''}
+              class=${classMap({ 'ion-invalid': this.formErrorField === 'code', 'ion-touched': this.formErrorField === 'code' })}
               error-text=${this.formErrorField === 'code' ? this.formError : ''}
               .value=${this.newCode} @ionInput=${(e: any) => { this.newCode = e.target.value; if (this.formErrorField === 'code') { this.formError = ''; this.formErrorField = ''; } }}></ion-input>
             <ion-input mode="md" fill="outline" label-placement="floating" label=${t('ui.colName')} data-testid="pricing-name" .value=${this.newName} @ionInput=${(e: any) => (this.newName = e.target.value)}></ion-input>

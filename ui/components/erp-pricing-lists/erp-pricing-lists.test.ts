@@ -227,3 +227,46 @@ describe('la columna VALOR enseña la magnitud de cada regla CON su unidad (pric
     }
   });
 });
+
+// pricing#43: a Lit `class=${…}` binding on the «Code» ion-input rewrites the WHOLE class attribute
+// each time the error mark comes or goes, and wipes the classes Ionic stamped on the host. Stencil
+// only re-adds what its own render changes, so the focus state, «has value», the outline fill and the
+// floating-label position are lost until the view reloads. jsdom runs no Ionic, so the test stamps
+// those classes itself, as Ionic does on hydrate.
+describe('pricing#43: the «Code» field keeps its Ionic look when marked with an error', () => {
+  const IONIC = ['ios', 'md', 'input-fill-outline', 'input-label-placement-floating', 'has-focus', 'has-value', 'hydrated'];
+
+  it('marking, clearing and re-marking the duplicate-code error never drops the Ionic host classes', async () => {
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.command = async () => {
+      throw Object.assign(new Error('duplicate'), { code: 'pricing.duplicate_code' });
+    };
+    const el = await montar();
+    const code = () => el.shadowRoot.querySelector<HTMLElement>('[data-testid="pricing-code"]')!;
+    code().classList.add(...IONIC);
+    const wc = el as unknown as { newCode: string; newName: string; createList: (ev: Event) => Promise<void>; updateComplete: Promise<unknown> };
+    const lost = () => IONIC.filter((c) => !code().classList.contains(c));
+    const marked = () => ['ion-invalid', 'ion-touched'].every((c) => code().classList.contains(c));
+    const submit = async () => {
+      wc.newCode = 'BASE';
+      wc.newName = 'Tarifa base';
+      await wc.createList(new Event('submit'));
+      await wc.updateComplete;
+    };
+
+    await submit();
+    expect(marked(), 'the duplicate code is marked on the field').toBe(true);
+    expect(lost(), 'Ionic classes lost when the error is marked').toEqual([]);
+
+    (code() as unknown as { value: string }).value = 'BASE2';
+    code().dispatchEvent(new CustomEvent('ionInput'));
+    await wc.updateComplete;
+    expect(marked(), 'typing clears the error mark').toBe(false);
+    expect(code().classList.contains('ion-invalid'), 'ion-invalid stays after typing').toBe(false);
+    expect(lost(), 'Ionic classes lost when the error is cleared').toEqual([]);
+
+    await submit();
+    expect(marked(), 'the error is marked again').toBe(true);
+    expect(lost(), 'Ionic classes lost when the error is marked again').toEqual([]);
+  });
+});
