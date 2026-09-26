@@ -42,7 +42,7 @@
     "phName": "Name",
     "phCurrency": "Currency",
     "searchPlaceholder": "Search code or name…",
-    "btnAdd": "Add",
+    "btnSave": "Save",
     "btnSaving": "Saving…",
     "loading": "Loading…",
     "emptyLists": "No price lists.",

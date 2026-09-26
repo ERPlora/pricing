@@ -43,7 +43,7 @@
     "phName": "Nombre",
     "phCurrency": "Divisa",
     "searchPlaceholder": "Buscar código o nombre…",
-    "btnAdd": "Añadir",
+    "btnSave": "Guardar",
     "btnSaving": "Guardando…",
     "loading": "Cargando…",
     "emptyLists": "Sin listas de precios.",
