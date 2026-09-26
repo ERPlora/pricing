@@ -3810,6 +3810,7 @@ var CATALOG = { es: es_default, en: en_default };
 var SEGMENTS = ["customer", "business", "wholesale", "retail"];
 var TAX_BASIS = ["1", "0"];
 var RULE_TYPES = ["percent", "fixed", "buy_x_get_y", "tiered"];
+var PHONE_QUERY = "(max-width: 640px)";
 function erplora() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -3826,6 +3827,10 @@ var ErpPricingLists = class extends i3 {
     this.newTaxIncluded = "";
     this.saving = false;
     this.tick = 0;
+    this.phone = false;
+    this.onPhoneChange = (e6) => {
+      this.phone = e6.matches;
+    };
     // Re-render al cambiar el idioma del shell (ADR-0055): los getters `listColumns`/`ruleColumns` y
     // el texto del template se re-evalúan con el nuevo `erplora.locale`.
     this.onLocaleChange = () => this.requestUpdate();
@@ -3833,9 +3838,12 @@ var ErpPricingLists = class extends i3 {
   static {
     this.styles = i`
     :host { display:flex; flex-direction:column; height:100%; min-height:0; font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
-    /* Dos tablas apiladas que se reparten el alto: cada una con su scroll interno y su pie fijo. */
-    .page { display:flex; flex-direction:column; gap:.5rem; min-height:0; flex:1 1 auto; }
+    /* Two stacked tables that share the height: each with its inner scroll and its fixed footer. */
+    .page { display:flex; flex-direction:column; gap:.5rem; min-height:0; flex:1 1 auto; overflow-y:auto; }
     .page > ok-data-table { flex:1 1 0; min-height:12rem; }
+    /* On a phone the tables do not fill (pricing#47): halving the height left each one a 108 px slot
+       of cards. Each keeps its full height and the page scrolls as one. */
+    .page > ok-data-table:not([fill]) { flex:0 0 auto; }
     h3 { margin:.5rem 0 0; font-size:1rem; color:var(--ion-color-medium,#5c594f); }
     /* El alta vive en el panel lateral de la tabla (estrecho): los campos van APILADOS. */
     .form { display:flex; flex-direction:column; gap:.7rem; }
@@ -3908,12 +3916,15 @@ var ErpPricingLists = class extends i3 {
       { key: "priority", header: t5("ui.colPriority"), align: "right", sortable: true, filterable: true, filterType: "range" }
     ];
   }
-  // TODO-LIT: componentWillLoad → connectedCallback. Recuerda: connectedCallback se dispara
-  // en CADA reconexión al DOM (no solo en el primer montaje). Si la init debe correr una
-  // sola vez tras el primer render, considera firstUpdated() en su lugar.
+  // Runs on EVERY reconnection to the DOM, not only the first mount.
   async connectedCallback() {
     super.connectedCallback();
     window.addEventListener("erplora:locale-changed", this.onLocaleChange);
+    if (typeof window.matchMedia === "function") {
+      this.phoneQuery = window.matchMedia(PHONE_QUERY);
+      this.phone = this.phoneQuery.matches;
+      this.phoneQuery.addEventListener("change", this.onPhoneChange);
+    }
     this.listsCtrl = createListController(erplora(), "pricing.price_lists.list", () => this.requestUpdate(), {
       pageSize: 50,
       sort: "name",
@@ -3939,6 +3950,8 @@ var ErpPricingLists = class extends i3 {
   }
   disconnectedCallback() {
     window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
+    this.phoneQuery?.removeEventListener("change", this.onPhoneChange);
+    this.phoneQuery = void 0;
     super.disconnectedCallback();
     this.unsub?.();
   }
@@ -3991,7 +4004,7 @@ var ErpPricingLists = class extends i3 {
     return b2`<div class="page">
         ${this.formError && !this.formErrorField ? b2`<p class="err" data-testid="pricing-form-error">${this.formError}</p>` : A}
         ${this.listsCtrl?.error ? b2`<p class="err" data-testid="pricing-load-error">${this.listsCtrl.error}</p>` : A}
-        <ok-data-table testid="pricing-table" .serverSide=${true} .fill=${true} .addable=${true} .views=${true} .cardTitle=${(row) => String(row.name ?? row.code ?? "\u2014")} .columns=${this.listColumns} .rows=${this.listsCtrl?.rows ?? []} .total=${this.listsCtrl?.total ?? 0} .page=${this.listsCtrl?.state.page ?? 0} .pageSize=${this.listsCtrl?.state.pageSize ?? 50} .sort=${this.listsCtrl?.state.sort} .sortDir=${this.listsCtrl?.state.dir ?? "asc"} .searchable=${true} .searchPlaceholder=${t5("ui.searchPlaceholder")} .emptyMessage=${this.listsCtrl?.loading ? t5("ui.loading") : t5("ui.emptyLists")} @pageChange=${(e6) => this.listsCtrl.setPage(e6.detail)} @pageSizeChange=${(e6) => this.listsCtrl.setPageSize(e6.detail)} @sortChange=${(e6) => this.listsCtrl.setSort(e6.detail.sort, e6.detail.dir)} @searchChange=${(e6) => this.listsCtrl.setSearch(e6.detail)} @filterChange=${(e6) => this.listsCtrl.setFilter(e6.detail.col, e6.detail.value)}>
+        <ok-data-table testid="pricing-table" .serverSide=${true} .fill=${!this.phone} .addable=${true} .views=${true} .cardTitle=${(row) => String(row.name ?? row.code ?? "\u2014")} .columns=${this.listColumns} .rows=${this.listsCtrl?.rows ?? []} .total=${this.listsCtrl?.total ?? 0} .page=${this.listsCtrl?.state.page ?? 0} .pageSize=${this.listsCtrl?.state.pageSize ?? 50} .sort=${this.listsCtrl?.state.sort} .sortDir=${this.listsCtrl?.state.dir ?? "asc"} .searchable=${true} .searchPlaceholder=${t5("ui.searchPlaceholder")} .emptyMessage=${this.listsCtrl?.loading ? t5("ui.loading") : t5("ui.emptyLists")} @pageChange=${(e6) => this.listsCtrl.setPage(e6.detail)} @pageSizeChange=${(e6) => this.listsCtrl.setPageSize(e6.detail)} @sortChange=${(e6) => this.listsCtrl.setSort(e6.detail.sort, e6.detail.dir)} @searchChange=${(e6) => this.listsCtrl.setSearch(e6.detail)} @filterChange=${(e6) => this.listsCtrl.setFilter(e6.detail.col, e6.detail.value)}>
           <!-- Alta: se proyecta SIEMPRE (aunque el panel esté cerrado); si solo se pintara al abrir,
                el «+» de la barra desplegaría un panel vacío. -->
           <form slot="create" class="form" data-testid="pricing-form" @submit=${(e6) => this.createList(e6)}>
@@ -4018,7 +4031,7 @@ var ErpPricingLists = class extends i3 {
         </ok-data-table>
         <h3>${t5("ui.rulesTitle")}</h3>
         ${this.rulesCtrl?.error ? b2`<p class="err" data-testid="pricing-rules-load-error">${this.rulesCtrl.error}</p>` : A}
-        <ok-data-table testid="pricing-rules-table" .serverSide=${true} .fill=${true} .addable=${false} .views=${true} .cardTitle=${(row) => String(row.name ?? row.code ?? "\u2014")} .columns=${this.ruleColumns} .rows=${this.rulesCtrl?.rows ?? []} .total=${this.rulesCtrl?.total ?? 0} .page=${this.rulesCtrl?.state.page ?? 0} .pageSize=${this.rulesCtrl?.state.pageSize ?? 50} .sort=${this.rulesCtrl?.state.sort} .sortDir=${this.rulesCtrl?.state.dir ?? "asc"} .searchable=${true} .searchPlaceholder=${t5("ui.searchPlaceholder")} .emptyMessage=${this.rulesCtrl?.loading ? t5("ui.loading") : t5("ui.emptyRules")} @pageChange=${(e6) => this.rulesCtrl.setPage(e6.detail)} @pageSizeChange=${(e6) => this.rulesCtrl.setPageSize(e6.detail)} @sortChange=${(e6) => this.rulesCtrl.setSort(e6.detail.sort, e6.detail.dir)} @searchChange=${(e6) => this.rulesCtrl.setSearch(e6.detail)} @filterChange=${(e6) => this.rulesCtrl.setFilter(e6.detail.col, e6.detail.value)}></ok-data-table>
+        <ok-data-table testid="pricing-rules-table" .serverSide=${true} .fill=${!this.phone} .addable=${false} .views=${true} .cardTitle=${(row) => String(row.name ?? row.code ?? "\u2014")} .columns=${this.ruleColumns} .rows=${this.rulesCtrl?.rows ?? []} .total=${this.rulesCtrl?.total ?? 0} .page=${this.rulesCtrl?.state.page ?? 0} .pageSize=${this.rulesCtrl?.state.pageSize ?? 50} .sort=${this.rulesCtrl?.state.sort} .sortDir=${this.rulesCtrl?.state.dir ?? "asc"} .searchable=${true} .searchPlaceholder=${t5("ui.searchPlaceholder")} .emptyMessage=${this.rulesCtrl?.loading ? t5("ui.loading") : t5("ui.emptyRules")} @pageChange=${(e6) => this.rulesCtrl.setPage(e6.detail)} @pageSizeChange=${(e6) => this.rulesCtrl.setPageSize(e6.detail)} @sortChange=${(e6) => this.rulesCtrl.setSort(e6.detail.sort, e6.detail.dir)} @searchChange=${(e6) => this.rulesCtrl.setSearch(e6.detail)} @filterChange=${(e6) => this.rulesCtrl.setFilter(e6.detail.col, e6.detail.value)}></ok-data-table>
       </div>`;
   }
 };
@@ -4046,6 +4059,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPricingLists.prototype, "tick", 2);
+__decorateClass([
+  r5()
+], ErpPricingLists.prototype, "phone", 2);
 define("erp-pricing-lists", ErpPricingLists);
 export {
   ErpPricingLists
