@@ -270,3 +270,55 @@ describe('pricing#43: the «Code» field keeps its Ionic look when marked with a
     expect(lost(), 'Ionic classes lost when the error is marked again').toEqual([]);
   });
 });
+
+// pricing#46: the create panel is short on a desktop, so after pressing «Add» at its bottom the
+// «Code» field —and the duplicate-code message hanging from it— sits scrolled out of view: the
+// rejection looked silent. The field that failed takes the focus (Ionic's `setFocus()`), which
+// scrolls the panel up to it, as every mainstream form does with its first invalid field.
+describe('pricing#46: a repeated code brings the «Code» field and its message into view', () => {
+  const mount = async () => {
+    const el = await montar();
+    const code = el.shadowRoot.querySelector<HTMLElement>('[data-testid="pricing-code"]')!;
+    const focus: string[] = [];
+    // jsdom runs no Ionic: record what `setFocus` is asked, and whether the message was already
+    // painted on the field at that moment (focusing before the render would show an empty field).
+    (code as unknown as { setFocus: () => Promise<void> }).setFocus = async () => {
+      focus.push(code.getAttribute('error-text') ?? '');
+    };
+    const wc = el as unknown as { newCode: string; newName: string; createList: (ev: Event) => Promise<void>; updateComplete: Promise<unknown> };
+    const submit = async () => {
+      wc.newCode = 'OFERTAS';
+      wc.newName = 'Ofertas';
+      await wc.createList(new Event('submit'));
+      await wc.updateComplete;
+      await new Promise((r) => setTimeout(r, 0));
+    };
+    return { focus, submit };
+  };
+  const sdk = () => (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+
+  it('the duplicate-code rejection focuses the «Code» field, with its message already painted', async () => {
+    sdk().command = async () => {
+      throw Object.assign(new Error('duplicate'), { code: 'pricing.duplicate_code' });
+    };
+    const { focus, submit } = await mount();
+    await submit();
+    expect(focus.length, 'setFocus calls on «Code»').toBe(1);
+    expect(focus[0], 'the error-text was already painted when the focus landed').not.toBe('');
+  });
+
+  it('a failure that is not about a field does not steal the focus', async () => {
+    sdk().command = async () => {
+      throw Object.assign(new Error('boom'), { code: 'internal' });
+    };
+    const { focus, submit } = await mount();
+    await submit();
+    expect(focus).toEqual([]);
+  });
+
+  it('a successful create does not focus anything', async () => {
+    const { focus, submit } = await mount();
+    await submit();
+    expect(focus).toEqual([]);
+  });
+});
