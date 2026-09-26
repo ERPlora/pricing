@@ -3738,7 +3738,7 @@ var es_default = {
     phName: "Nombre",
     phCurrency: "Divisa",
     searchPlaceholder: "Buscar c\xF3digo o nombre\u2026",
-    btnAdd: "A\xF1adir",
+    btnSave: "Guardar",
     btnSaving: "Guardando\u2026",
     loading: "Cargando\u2026",
     emptyLists: "Sin listas de precios.",
@@ -3794,7 +3794,7 @@ var en_default = {
     phName: "Name",
     phCurrency: "Currency",
     searchPlaceholder: "Search code or name\u2026",
-    btnAdd: "Add",
+    btnSave: "Save",
     btnSaving: "Saving\u2026",
     loading: "Loading\u2026",
     emptyLists: "No price lists.",
@@ -4013,7 +4013,7 @@ var ErpPricingLists = class extends i3 {
               <ion-select-option value="1">${t5("ui.taxBasis.included")}</ion-select-option>
               <ion-select-option value="0">${t5("ui.taxBasis.excluded")}</ion-select-option>
             </ion-select>
-            <ion-button type="submit" data-testid="pricing-submit" ?disabled=${this.saving || !this.newCode || !this.newName}>${this.saving ? t5("ui.btnSaving") : t5("ui.btnAdd")}</ion-button>
+            <ion-button type="submit" data-testid="pricing-submit" ?disabled=${this.saving || !this.newCode || !this.newName}>${this.saving ? t5("ui.btnSaving") : t5("ui.btnSave")}</ion-button>
           </form>
         </ok-data-table>
         <h3>${t5("ui.rulesTitle")}</h3>

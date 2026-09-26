@@ -9,6 +9,8 @@
 // Los filtros van dentro de la tabla y los de dominio cerrado se eligen con un `select`, con las
 // opciones que declara la migración: `segment` ∈ customer|business|wholesale|retail y
 // `rule_type` ∈ percent|fixed|buy_x_get_y|tiered.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 const LISTA = { id: 'l1', code: 'BASE', name: 'Tarifa base', currency: 'EUR', is_default: 1, segment: 'retail' };
@@ -271,7 +273,7 @@ describe('pricing#43: the «Code» field keeps its Ionic look when marked with a
   });
 });
 
-// pricing#46: the create panel is short on a desktop, so after pressing «Add» at its bottom the
+// pricing#46: the create panel is short on a desktop, so after pressing «Save» at its bottom the
 // «Code» field —and the duplicate-code message hanging from it— sits scrolled out of view: the
 // rejection looked silent. The field that failed takes the focus (Ionic's `setFocus()`), which
 // scrolls the panel up to it, as every mainstream form does with its first invalid field.
@@ -320,5 +322,32 @@ describe('pricing#46: a repeated code brings the «Code» field and its message 
     const { focus, submit } = await mount();
     await submit();
     expect(focus).toEqual([]);
+  });
+});
+
+// pricing#50: the toolbar «+ Add» OPENS the create panel, and the button that SENDS the form inside
+// it was also called «Add». A screen reader heard two «Add» buttons and a test could not tell them
+// apart. The submit is «Save», as in every other create form (and in Odoo, Shopify or Square); «Add»
+// stays for the toolbar button only, which ok-data-table labels itself.
+describe('pricing#50: the create panel submits with «Save», not a second «Add»', () => {
+  const locale = (lang: 'en' | 'es') =>
+    JSON.parse(readFileSync(join(__dirname, '..', '..', '..', 'locales', `${lang}.json`), 'utf8')) as {
+      ui: Record<string, string>;
+    };
+
+  it('the submit button of the create panel reads the «Save» key', async () => {
+    const el = await montar();
+    const submit = el.shadowRoot.querySelector('form[slot="create"] ion-button[type="submit"]');
+    expect(submit?.textContent?.trim()).toBe('ui.btnSave');
+  });
+
+  it('«Save» is translated: en «Save», es «Guardar»', () => {
+    expect(locale('en').ui.btnSave).toBe('Save');
+    expect(locale('es').ui.btnSave).toBe('Guardar');
+  });
+
+  it('the orphaned «Add» key is gone: nothing in the view is labelled with it any more', () => {
+    expect(locale('en').ui.btnAdd).toBeUndefined();
+    expect(locale('es').ui.btnAdd).toBeUndefined();
   });
 });

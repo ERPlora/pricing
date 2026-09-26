@@ -255,7 +255,7 @@ export class ErpPricingLists extends LitElement {
       const shown = commandError(e, (k) => erplora().t(CATALOG, k));
       this.formError = shown.message;
       this.formErrorField = shown.field ?? '';
-      // pricing#46: on a desktop the panel stays scrolled down at «Add», with the failing field
+      // pricing#46: on a desktop the panel stays scrolled down at «Save», with the failing field
       // out of view. Focus it once its message is painted: Ionic scrolls the panel up to it.
       if (shown.field) {
         await this.updateComplete;
@@ -293,7 +293,7 @@ export class ErpPricingLists extends LitElement {
               <ion-select-option value="1">${t('ui.taxBasis.included')}</ion-select-option>
               <ion-select-option value="0">${t('ui.taxBasis.excluded')}</ion-select-option>
             </ion-select>
-            <ion-button type="submit" data-testid="pricing-submit" ?disabled=${this.saving || !this.newCode || !this.newName}>${this.saving ? t('ui.btnSaving') : t('ui.btnAdd')}</ion-button>
+            <ion-button type="submit" data-testid="pricing-submit" ?disabled=${this.saving || !this.newCode || !this.newName}>${this.saving ? t('ui.btnSaving') : t('ui.btnSave')}</ion-button>
           </form>
         </ok-data-table>
         <h3>${t('ui.rulesTitle')}</h3>
