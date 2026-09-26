@@ -255,6 +255,15 @@ export class ErpPricingLists extends LitElement {
       const shown = commandError(e, (k) => erplora().t(CATALOG, k));
       this.formError = shown.message;
       this.formErrorField = shown.field ?? '';
+      // pricing#46: on a desktop the panel stays scrolled down at «Add», with the failing field
+      // out of view. Focus it once its message is painted: Ionic scrolls the panel up to it.
+      if (shown.field) {
+        await this.updateComplete;
+        const field = this.renderRoot.querySelector(`[data-testid="pricing-${shown.field}"]`) as
+          | (HTMLElement & { setFocus?: () => Promise<void> })
+          | null;
+        await field?.setFocus?.();
+      }
     } finally {
       this.saving = false;
     }

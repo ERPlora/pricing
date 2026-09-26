@@ -28,6 +28,10 @@ page). Requires `pricing.view_pricing`. Sorted by name.
 Creating a list marked default **demotes the previous default** in the same transaction — there is
 only ever one. Requires `pricing.manage_pricing`.
 
+If the **code is already used** by another list of the hub, nothing is created: the **Code** field is
+marked with the message and takes the focus, so the panel scrolls back up to it. Another hub may use
+the same code.
+
 ### Add a product price to a list
 
 1. Open the list and add an item.

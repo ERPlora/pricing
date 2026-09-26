@@ -3974,6 +3974,11 @@ var ErpPricingLists = class extends i3 {
       const shown = commandError(e6, (k2) => erplora().t(CATALOG, k2));
       this.formError = shown.message;
       this.formErrorField = shown.field ?? "";
+      if (shown.field) {
+        await this.updateComplete;
+        const field = this.renderRoot.querySelector(`[data-testid="pricing-${shown.field}"]`);
+        await field?.setFocus?.();
+      }
     } finally {
       this.saving = false;
     }
