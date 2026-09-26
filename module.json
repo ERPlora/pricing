@@ -1,7 +1,7 @@
 {
   "id": "pricing",
   "name": "Pricing",
-  "version": "1.1.22",
+  "version": "1.1.23",
   "description": "Price lists and pricing rules, with discounts and surcharges per item.",
   "agent": {
     "description": "Manages price lists and pricing rules: create and maintain price lists, set item prices, define discount or surcharge rules, and compute the final price for a customer.",
