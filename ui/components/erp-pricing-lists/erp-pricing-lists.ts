@@ -61,6 +61,10 @@ const SEGMENTS = ['customer', 'business', 'wholesale', 'retail'];
 const TAX_BASIS = ['1', '0'];
 const RULE_TYPES = ['percent', 'fixed', 'buy_x_get_y', 'tiered'];
 
+// A phone: where ok-data-table opens as cards, and the screen lays its two lists out as one
+// scrolling page instead of two filling tables (pricing#47).
+const PHONE_QUERY = '(max-width: 640px)';
+
 function erplora(): ErploraClientLike {
   const c = (globalThis as { erplora?: ErploraClientLike }).erplora;
   if (!c) throw new Error('erplora SDK no inicializado por el shell');
@@ -70,9 +74,12 @@ function erplora(): ErploraClientLike {
 export class ErpPricingLists extends LitElement {
   static styles = css`
     :host { display:flex; flex-direction:column; height:100%; min-height:0; font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
-    /* Dos tablas apiladas que se reparten el alto: cada una con su scroll interno y su pie fijo. */
-    .page { display:flex; flex-direction:column; gap:.5rem; min-height:0; flex:1 1 auto; }
+    /* Two stacked tables that share the height: each with its inner scroll and its fixed footer. */
+    .page { display:flex; flex-direction:column; gap:.5rem; min-height:0; flex:1 1 auto; overflow-y:auto; }
     .page > ok-data-table { flex:1 1 0; min-height:12rem; }
+    /* On a phone the tables do not fill (pricing#47): halving the height left each one a 108 px slot
+       of cards. Each keeps its full height and the page scrolls as one. */
+    .page > ok-data-table:not([fill]) { flex:0 0 auto; }
     h3 { margin:.5rem 0 0; font-size:1rem; color:var(--ion-color-medium,#5c594f); }
     /* El alta vive en el panel lateral de la tabla (estrecho): los campos van APILADOS. */
     .form { display:flex; flex-direction:column; gap:.7rem; }
@@ -99,6 +106,16 @@ export class ErpPricingLists extends LitElement {
   @state() saving = false;
 
   @state() tick = 0;
+
+  // On a phone the lists are one scrolling page instead of two filling tables (pricing#47): `fill`
+  // follows this.
+  @state() private phone = false;
+
+  private phoneQuery?: MediaQueryList;
+
+  private readonly onPhoneChange = (e: { matches: boolean }): void => {
+    this.phone = e.matches;
+  };
 
   private listsCtrl!: ListController<PriceList>;
 
@@ -180,12 +197,15 @@ export class ErpPricingLists extends LitElement {
   // el texto del template se re-evalúan con el nuevo `erplora.locale`.
   private readonly onLocaleChange = (): void => this.requestUpdate();
 
-  // TODO-LIT: componentWillLoad → connectedCallback. Recuerda: connectedCallback se dispara
-  // en CADA reconexión al DOM (no solo en el primer montaje). Si la init debe correr una
-  // sola vez tras el primer render, considera firstUpdated() en su lugar.
+  // Runs on EVERY reconnection to the DOM, not only the first mount.
   async connectedCallback() {
     super.connectedCallback();
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
+    if (typeof window.matchMedia === 'function') {
+      this.phoneQuery = window.matchMedia(PHONE_QUERY);
+      this.phone = this.phoneQuery.matches;
+      this.phoneQuery.addEventListener('change', this.onPhoneChange);
+    }
     this.listsCtrl = createListController<PriceList>(erplora(), 'pricing.price_lists.list', () => this.requestUpdate(), {
       pageSize: 50,
       sort: 'name',
@@ -214,6 +234,8 @@ export class ErpPricingLists extends LitElement {
 
   disconnectedCallback() {
     window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
+    this.phoneQuery?.removeEventListener('change', this.onPhoneChange);
+    this.phoneQuery = undefined;
     super.disconnectedCallback();
     this.unsub?.();
   }
@@ -277,7 +299,7 @@ export class ErpPricingLists extends LitElement {
     return html`<div class="page">
         ${this.formError && !this.formErrorField ? html`<p class="err" data-testid="pricing-form-error">${this.formError}</p>` : nothing}
         ${this.listsCtrl?.error ? html`<p class="err" data-testid="pricing-load-error">${this.listsCtrl.error}</p>` : nothing}
-        <ok-data-table testid="pricing-table" .serverSide=${true} .fill=${true} .addable=${true} .views=${true} .cardTitle=${(row: Record<string, unknown>) => String(row.name ?? row.code ?? '—')} .columns=${this.listColumns} .rows=${this.listsCtrl?.rows ?? []} .total=${this.listsCtrl?.total ?? 0} .page=${this.listsCtrl?.state.page ?? 0} .pageSize=${this.listsCtrl?.state.pageSize ?? 50} .sort=${this.listsCtrl?.state.sort} .sortDir=${this.listsCtrl?.state.dir ?? 'asc'} .searchable=${true} .searchPlaceholder=${t('ui.searchPlaceholder')} .emptyMessage=${this.listsCtrl?.loading ? t('ui.loading') : t('ui.emptyLists')} @pageChange=${(e: CustomEvent<number>) => this.listsCtrl.setPage(e.detail)} @pageSizeChange=${(e: CustomEvent<number>) => this.listsCtrl.setPageSize(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.listsCtrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.listsCtrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.listsCtrl.setFilter(e.detail.col, e.detail.value)}>
+        <ok-data-table testid="pricing-table" .serverSide=${true} .fill=${!this.phone} .addable=${true} .views=${true} .cardTitle=${(row: Record<string, unknown>) => String(row.name ?? row.code ?? '—')} .columns=${this.listColumns} .rows=${this.listsCtrl?.rows ?? []} .total=${this.listsCtrl?.total ?? 0} .page=${this.listsCtrl?.state.page ?? 0} .pageSize=${this.listsCtrl?.state.pageSize ?? 50} .sort=${this.listsCtrl?.state.sort} .sortDir=${this.listsCtrl?.state.dir ?? 'asc'} .searchable=${true} .searchPlaceholder=${t('ui.searchPlaceholder')} .emptyMessage=${this.listsCtrl?.loading ? t('ui.loading') : t('ui.emptyLists')} @pageChange=${(e: CustomEvent<number>) => this.listsCtrl.setPage(e.detail)} @pageSizeChange=${(e: CustomEvent<number>) => this.listsCtrl.setPageSize(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.listsCtrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.listsCtrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.listsCtrl.setFilter(e.detail.col, e.detail.value)}>
           <!-- Alta: se proyecta SIEMPRE (aunque el panel esté cerrado); si solo se pintara al abrir,
                el «+» de la barra desplegaría un panel vacío. -->
           <form slot="create" class="form" data-testid="pricing-form" @submit=${(e: Event) => this.createList(e)}>
@@ -298,7 +320,7 @@ export class ErpPricingLists extends LitElement {
         </ok-data-table>
         <h3>${t('ui.rulesTitle')}</h3>
         ${this.rulesCtrl?.error ? html`<p class="err" data-testid="pricing-rules-load-error">${this.rulesCtrl.error}</p>` : nothing}
-        <ok-data-table testid="pricing-rules-table" .serverSide=${true} .fill=${true} .addable=${false} .views=${true} .cardTitle=${(row: Record<string, unknown>) => String(row.name ?? row.code ?? '—')} .columns=${this.ruleColumns} .rows=${this.rulesCtrl?.rows ?? []} .total=${this.rulesCtrl?.total ?? 0} .page=${this.rulesCtrl?.state.page ?? 0} .pageSize=${this.rulesCtrl?.state.pageSize ?? 50} .sort=${this.rulesCtrl?.state.sort} .sortDir=${this.rulesCtrl?.state.dir ?? 'asc'} .searchable=${true} .searchPlaceholder=${t('ui.searchPlaceholder')} .emptyMessage=${this.rulesCtrl?.loading ? t('ui.loading') : t('ui.emptyRules')} @pageChange=${(e: CustomEvent<number>) => this.rulesCtrl.setPage(e.detail)} @pageSizeChange=${(e: CustomEvent<number>) => this.rulesCtrl.setPageSize(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.rulesCtrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.rulesCtrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.rulesCtrl.setFilter(e.detail.col, e.detail.value)}></ok-data-table>
+        <ok-data-table testid="pricing-rules-table" .serverSide=${true} .fill=${!this.phone} .addable=${false} .views=${true} .cardTitle=${(row: Record<string, unknown>) => String(row.name ?? row.code ?? '—')} .columns=${this.ruleColumns} .rows=${this.rulesCtrl?.rows ?? []} .total=${this.rulesCtrl?.total ?? 0} .page=${this.rulesCtrl?.state.page ?? 0} .pageSize=${this.rulesCtrl?.state.pageSize ?? 50} .sort=${this.rulesCtrl?.state.sort} .sortDir=${this.rulesCtrl?.state.dir ?? 'asc'} .searchable=${true} .searchPlaceholder=${t('ui.searchPlaceholder')} .emptyMessage=${this.rulesCtrl?.loading ? t('ui.loading') : t('ui.emptyRules')} @pageChange=${(e: CustomEvent<number>) => this.rulesCtrl.setPage(e.detail)} @pageSizeChange=${(e: CustomEvent<number>) => this.rulesCtrl.setPageSize(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.rulesCtrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.rulesCtrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.rulesCtrl.setFilter(e.detail.col, e.detail.value)}></ok-data-table>
       </div>`;
   }
 }
