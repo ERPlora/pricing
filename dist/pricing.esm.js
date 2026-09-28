@@ -4052,13 +4052,21 @@ var ErpPricingLists = class extends i3 {
       this.saving = false;
     }
   }
+  /** pm#513: the refusal appears above the button that was pressed — on a phone that can leave it
+   *  off the sheet. Bring it into view when it appears, not again on every keystroke. A refusal on
+   *  one field is not painted here: that field takes the focus instead (pricing#46). */
+  updated(changed) {
+    super.updated(changed);
+    if (changed.has("formError")) {
+      this.renderRoot.querySelector('[data-testid="pricing-form-error"]')?.scrollIntoView?.({ block: "center" });
+    }
+  }
   // El título de la vista lo pinta el topbar del shell: repetirlo aquí lo duplicaba en pantalla.
   // La tabla de reglas de descuento NO declara `addable`: esta vista no da de alta reglas, y un «+»
   // que abre un panel vacío es peor que ningún «+».
   render() {
     const t5 = (k2) => erplora().t(CATALOG, k2);
     return b2`<div class="page">
-        ${this.formError && !this.formErrorField ? b2`<p class="err" data-testid="pricing-form-error">${this.formError}</p>` : A}
         ${this.listsCtrl?.error ? b2`<p class="err" data-testid="pricing-load-error">${this.listsCtrl.error}</p>` : A}
         <ok-data-table testid="pricing-table" .serverSide=${true} .fill=${!this.phone} .addable=${true} .views=${true} .cardTitle=${(row) => String(row.name ?? row.code ?? "\u2014")} .columns=${this.listColumns} .rows=${this.listsCtrl?.rows ?? []} .total=${this.listsCtrl?.total ?? 0} .page=${this.listsCtrl?.state.page ?? 0} .pageSize=${this.listsCtrl?.state.pageSize ?? 50} .sort=${this.listsCtrl?.state.sort} .sortDir=${this.listsCtrl?.state.dir ?? "asc"} .searchable=${true} .searchPlaceholder=${t5("ui.searchPlaceholder")} .emptyMessage=${this.listsCtrl?.loading ? t5("ui.loading") : t5("ui.emptyLists")} @pageChange=${(e6) => this.listsCtrl.setPage(e6.detail)} @pageSizeChange=${(e6) => this.listsCtrl.setPageSize(e6.detail)} @sortChange=${(e6) => this.listsCtrl.setSort(e6.detail.sort, e6.detail.dir)} @searchChange=${(e6) => this.listsCtrl.setSearch(e6.detail)} @filterChange=${(e6) => this.listsCtrl.setFilter(e6.detail.col, e6.detail.value)}>
           <!-- Alta: se proyecta SIEMPRE (aunque el panel esté cerrado); si solo se pintara al abrir,
@@ -4082,6 +4090,9 @@ var ErpPricingLists = class extends i3 {
               <ion-select-option value="1">${t5("ui.taxBasis.included")}</ion-select-option>
               <ion-select-option value="0">${t5("ui.taxBasis.excluded")}</ion-select-option>
             </ion-select>
+            <!-- pm#513: the refusal travels WITH the form — under 834 px the panel is a full-screen
+                 sheet and a notice on the page underneath it is never seen. -->
+            ${this.formError && !this.formErrorField ? b2`<p class="err" data-testid="pricing-form-error">${this.formError}</p>` : A}
             <ion-button type="submit" data-testid="pricing-submit" ?disabled=${this.saving || !this.newCode || !this.newName}>${this.saving ? t5("ui.btnSaving") : t5("ui.btnSave")}</ion-button>
           </form>
         </ok-data-table>

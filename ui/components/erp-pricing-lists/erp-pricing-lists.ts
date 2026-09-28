@@ -1,4 +1,4 @@
-import { LitElement, html, css, nothing } from 'lit';
+import { LitElement, html, css, nothing, type PropertyValues } from 'lit';
 import { state } from 'lit/decorators.js';
 import { classMap } from 'lit/directives/class-map.js';
 import { define } from '@erplora/outfitkit/define';
@@ -291,13 +291,22 @@ export class ErpPricingLists extends LitElement {
     }
   }
 
+  /** pm#513: the refusal appears above the button that was pressed — on a phone that can leave it
+   *  off the sheet. Bring it into view when it appears, not again on every keystroke. A refusal on
+   *  one field is not painted here: that field takes the focus instead (pricing#46). */
+  updated(changed: PropertyValues): void {
+    super.updated(changed);
+    if (changed.has('formError')) {
+      this.renderRoot.querySelector('[data-testid="pricing-form-error"]')?.scrollIntoView?.({ block: 'center' });
+    }
+  }
+
   // El título de la vista lo pinta el topbar del shell: repetirlo aquí lo duplicaba en pantalla.
   // La tabla de reglas de descuento NO declara `addable`: esta vista no da de alta reglas, y un «+»
   // que abre un panel vacío es peor que ningún «+».
   render() {
     const t = (k: string): string => erplora().t(CATALOG, k);
     return html`<div class="page">
-        ${this.formError && !this.formErrorField ? html`<p class="err" data-testid="pricing-form-error">${this.formError}</p>` : nothing}
         ${this.listsCtrl?.error ? html`<p class="err" data-testid="pricing-load-error">${this.listsCtrl.error}</p>` : nothing}
         <ok-data-table testid="pricing-table" .serverSide=${true} .fill=${!this.phone} .addable=${true} .views=${true} .cardTitle=${(row: Record<string, unknown>) => String(row.name ?? row.code ?? '—')} .columns=${this.listColumns} .rows=${this.listsCtrl?.rows ?? []} .total=${this.listsCtrl?.total ?? 0} .page=${this.listsCtrl?.state.page ?? 0} .pageSize=${this.listsCtrl?.state.pageSize ?? 50} .sort=${this.listsCtrl?.state.sort} .sortDir=${this.listsCtrl?.state.dir ?? 'asc'} .searchable=${true} .searchPlaceholder=${t('ui.searchPlaceholder')} .emptyMessage=${this.listsCtrl?.loading ? t('ui.loading') : t('ui.emptyLists')} @pageChange=${(e: CustomEvent<number>) => this.listsCtrl.setPage(e.detail)} @pageSizeChange=${(e: CustomEvent<number>) => this.listsCtrl.setPageSize(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.listsCtrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.listsCtrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.listsCtrl.setFilter(e.detail.col, e.detail.value)}>
           <!-- Alta: se proyecta SIEMPRE (aunque el panel esté cerrado); si solo se pintara al abrir,
@@ -315,6 +324,9 @@ export class ErpPricingLists extends LitElement {
               <ion-select-option value="1">${t('ui.taxBasis.included')}</ion-select-option>
               <ion-select-option value="0">${t('ui.taxBasis.excluded')}</ion-select-option>
             </ion-select>
+            <!-- pm#513: the refusal travels WITH the form — under 834 px the panel is a full-screen
+                 sheet and a notice on the page underneath it is never seen. -->
+            ${this.formError && !this.formErrorField ? html`<p class="err" data-testid="pricing-form-error">${this.formError}</p>` : nothing}
             <ion-button type="submit" data-testid="pricing-submit" ?disabled=${this.saving || !this.newCode || !this.newName}>${this.saving ? t('ui.btnSaving') : t('ui.btnSave')}</ion-button>
           </form>
         </ok-data-table>
