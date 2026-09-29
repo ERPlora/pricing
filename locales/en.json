@@ -10,7 +10,7 @@
     "pricing.price_list_unavailable": "That price list is not available: it does not exist in this business, or it has been deleted or deactivated."
   },
   "ui": {
-    "title": "Price lists",
+    "listsTitle": "Price lists",
     "rulesTitle": "Discount rules",
     "colCode": "Code",
     "colName": "Name",

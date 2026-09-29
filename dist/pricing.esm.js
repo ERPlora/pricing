@@ -3762,7 +3762,7 @@ var es_default = {
     "pricing.price_list_unavailable": "Esa tarifa no est\xE1 disponible: no existe en este negocio, o se ha borrado o desactivado."
   },
   ui: {
-    title: "Listas de precios",
+    listsTitle: "Listas de precios",
     rulesTitle: "Reglas de descuento",
     colCode: "C\xF3digo",
     colName: "Nombre",
@@ -3818,7 +3818,7 @@ var en_default = {
     "pricing.price_list_unavailable": "That price list is not available: it does not exist in this business, or it has been deleted or deactivated."
   },
   ui: {
-    title: "Price lists",
+    listsTitle: "Price lists",
     rulesTitle: "Discount rules",
     colCode: "Code",
     colName: "Name",
@@ -4061,12 +4061,14 @@ var ErpPricingLists = class extends i3 {
       this.renderRoot.querySelector('[data-testid="pricing-form-error"]')?.scrollIntoView?.({ block: "center" });
     }
   }
-  // El título de la vista lo pinta el topbar del shell: repetirlo aquí lo duplicaba en pantalla.
-  // La tabla de reglas de descuento NO declara `addable`: esta vista no da de alta reglas, y un «+»
-  // que abre un panel vacío es peor que ningún «+».
+  // The view title is painted by the shell topbar; each <h3> labels ITS table (pricing#48), the
+  // way Reservations › Availability does with its stacked tables.
+  // The discount rules table does NOT declare `addable`: this view does not create rules, and a «+»
+  // that opens an empty panel is worse than no «+» at all.
   render() {
     const t5 = (k2) => erplora().t(CATALOG, k2);
     return b2`<div class="page">
+        <h3>${t5("ui.listsTitle")}</h3>
         ${this.listsCtrl?.error ? b2`<p class="err" data-testid="pricing-load-error">${this.listsCtrl.error}</p>` : A}
         <ok-data-table testid="pricing-table" .serverSide=${true} .fill=${!this.phone} .addable=${true} .views=${true} .cardTitle=${(row) => String(row.name ?? row.code ?? "\u2014")} .columns=${this.listColumns} .rows=${this.listsCtrl?.rows ?? []} .total=${this.listsCtrl?.total ?? 0} .page=${this.listsCtrl?.state.page ?? 0} .pageSize=${this.listsCtrl?.state.pageSize ?? 50} .sort=${this.listsCtrl?.state.sort} .sortDir=${this.listsCtrl?.state.dir ?? "asc"} .searchable=${true} .searchPlaceholder=${t5("ui.searchPlaceholder")} .emptyMessage=${this.listsCtrl?.loading ? t5("ui.loading") : t5("ui.emptyLists")} @pageChange=${(e6) => this.listsCtrl.setPage(e6.detail)} @pageSizeChange=${(e6) => this.listsCtrl.setPageSize(e6.detail)} @sortChange=${(e6) => this.listsCtrl.setSort(e6.detail.sort, e6.detail.dir)} @searchChange=${(e6) => this.listsCtrl.setSearch(e6.detail)} @filterChange=${(e6) => this.listsCtrl.setFilter(e6.detail.col, e6.detail.value)}>
           <!-- Alta: se proyecta SIEMPRE (aunque el panel esté cerrado); si solo se pintara al abrir,
