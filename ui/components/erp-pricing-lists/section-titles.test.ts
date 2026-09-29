@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { dataTableShowsLoadError } from '@erplora/module-sdk';
 
 const LIST = { id: 'l1', code: 'L1', name: 'Tarifa mayorista 1', currency: 'EUR', is_default: 0, segment: null };
 const RULE = { id: 'r1', code: 'R1', name: 'Descuento 1', rule_type: 'percent', value: '10', priority: 100 };
@@ -101,6 +102,16 @@ describe('pricing#48: each table of the price lists screen has its section title
   it('when the price lists fail to load, the error sits under their title, not above it', async () => {
     failLists = true;
     const el = await mount();
+    if (dataTableShowsLoadError()) {
+      // The shell's table paints a failed load itself (pm#533): the reason is on the table, which
+      // sits right under the title, and there is no page notice above it.
+      const table = el.shadowRoot.querySelector<HTMLElement & { error?: string }>('[testid="pricing-table"]')!;
+      expect(table.error).toBe('lists_down');
+      expect(el.shadowRoot.querySelector('[data-testid="pricing-load-error"]'), 'said twice').toBeNull();
+      expect(table.previousElementSibling?.tagName).toBe('H3');
+      expect(table.previousElementSibling?.textContent?.trim()).toBe('ui.listsTitle');
+      return;
+    }
     const error = el.shadowRoot.querySelector('[data-testid="pricing-load-error"]')!;
     expect(error).not.toBeNull();
     expect(error.previousElementSibling?.tagName).toBe('H3');
