@@ -17,6 +17,7 @@
 //     that does not load. No panel is open then, and a notice inside a closed panel is just as
 //     invisible (rv-appointments-227).
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { dataTableShowsLoadError } from '@erplora/module-sdk';
 import en from '../../../locales/en.json';
 
 /** The real `en` catalog: the view shows what the person reads, not a key. */
@@ -97,6 +98,16 @@ const GENERIC = translate('ui.createListError');
 /** The notice inside `scope`, or null. */
 const inside = (el: Wc, scope: string, testid: string): Element | null =>
   el.shadowRoot.querySelector(`${scope} [data-testid="${testid}"]`);
+
+/** The reason a list did not load, as the PAGE shows it: on the list's own table when the shell's
+ *  table paints a failed load itself (pm#533) — and then with no page notice, which would say it
+ *  twice —, in the page notice on an older shell. Null when the page does not show it. */
+function loadFailureOnPage(el: Wc, table: string, notice: string): string | null {
+  const pageNotice = inside(el, '.page', notice);
+  if (!dataTableShowsLoadError()) return pageNotice?.textContent?.trim() || null;
+  const t = el.shadowRoot.querySelector<HTMLElement & { error?: string }>(`.page ok-data-table[testid="${table}"]`);
+  return pageNotice ? null : t?.error || null;
+}
 
 /** Every place a notice with `text` is painted in, by where it sits. */
 function whereIs(el: Wc, text: string): string[] {
@@ -196,7 +207,7 @@ describe('pm#513 · price lists: what goes wrong OUTSIDE the save stays on the p
   it('a list of price lists that does not load is shown on the page, not in the form', async () => {
     loadFails = 'pricing.price_lists.list';
     const el = await mount();
-    expect(inside(el, '.page', 'pricing-load-error')).not.toBeNull();
+    expect(loadFailureOnPage(el, 'pricing-table', 'pricing-load-error')).toBe(LOAD_FAILURE);
     expect(inside(el, CREATE, 'pricing-load-error'), 'a closed panel hides it').toBeNull();
     expect(inside(el, CREATE, 'pricing-form-error')).toBeNull();
   });
@@ -204,7 +215,7 @@ describe('pm#513 · price lists: what goes wrong OUTSIDE the save stays on the p
   it('a list of discount rules that does not load is shown on the page, not in the form', async () => {
     loadFails = 'pricing.rules.list';
     const el = await mount();
-    expect(inside(el, '.page', 'pricing-rules-load-error')).not.toBeNull();
+    expect(loadFailureOnPage(el, 'pricing-rules-table', 'pricing-rules-load-error')).toBe(LOAD_FAILURE);
     expect(inside(el, CREATE, 'pricing-rules-load-error'), 'a closed panel hides it').toBeNull();
     expect(inside(el, CREATE, 'pricing-form-error')).toBeNull();
   });
@@ -215,7 +226,7 @@ describe('pm#513 · price lists: what goes wrong OUTSIDE the save stays on the p
     const el = await mount();
     await refusedCreate(el);
     expect(revealed).toEqual([inside(el, CREATE, 'pricing-form-error')]);
-    expect(inside(el, '.page', 'pricing-load-error'), 'the load failure is still on the page').not.toBeNull();
+    expect(loadFailureOnPage(el, 'pricing-table', 'pricing-load-error'), 'the load failure is still on the page').toBe(LOAD_FAILURE);
   });
 
   it('a load failure is not scrolled to as if it were a refused save', async () => {
