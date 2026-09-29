@@ -301,12 +301,14 @@ export class ErpPricingLists extends LitElement {
     }
   }
 
-  // El título de la vista lo pinta el topbar del shell: repetirlo aquí lo duplicaba en pantalla.
-  // La tabla de reglas de descuento NO declara `addable`: esta vista no da de alta reglas, y un «+»
-  // que abre un panel vacío es peor que ningún «+».
+  // The view title is painted by the shell topbar; each <h3> labels ITS table (pricing#48), the
+  // way Reservations › Availability does with its stacked tables.
+  // The discount rules table does NOT declare `addable`: this view does not create rules, and a «+»
+  // that opens an empty panel is worse than no «+» at all.
   render() {
     const t = (k: string): string => erplora().t(CATALOG, k);
     return html`<div class="page">
+        <h3>${t('ui.listsTitle')}</h3>
         ${this.listsCtrl?.error ? html`<p class="err" data-testid="pricing-load-error">${this.listsCtrl.error}</p>` : nothing}
         <ok-data-table testid="pricing-table" .serverSide=${true} .fill=${!this.phone} .addable=${true} .views=${true} .cardTitle=${(row: Record<string, unknown>) => String(row.name ?? row.code ?? '—')} .columns=${this.listColumns} .rows=${this.listsCtrl?.rows ?? []} .total=${this.listsCtrl?.total ?? 0} .page=${this.listsCtrl?.state.page ?? 0} .pageSize=${this.listsCtrl?.state.pageSize ?? 50} .sort=${this.listsCtrl?.state.sort} .sortDir=${this.listsCtrl?.state.dir ?? 'asc'} .searchable=${true} .searchPlaceholder=${t('ui.searchPlaceholder')} .emptyMessage=${this.listsCtrl?.loading ? t('ui.loading') : t('ui.emptyLists')} @pageChange=${(e: CustomEvent<number>) => this.listsCtrl.setPage(e.detail)} @pageSizeChange=${(e: CustomEvent<number>) => this.listsCtrl.setPageSize(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.listsCtrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.listsCtrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.listsCtrl.setFilter(e.detail.col, e.detail.value)}>
           <!-- Alta: se proyecta SIEMPRE (aunque el panel esté cerrado); si solo se pintara al abrir,
