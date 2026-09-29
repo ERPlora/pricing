@@ -17,12 +17,14 @@ const locale = (lang: 'en' | 'es') =>
   };
 
 let failLists = false;
+let phone = false;
 
 beforeEach(() => {
   failLists = false;
+  phone = false;
   (window as unknown as { matchMedia: unknown }).matchMedia = (query: string) => ({
     media: query,
-    matches: false,
+    matches: phone,
     addEventListener: () => {},
     removeEventListener: () => {},
   });
@@ -84,6 +86,16 @@ describe('pricing#48: each table of the price lists screen has its section title
     const headings = [...el.shadowRoot.querySelectorAll('h3')].map((h) => h.textContent?.trim());
     expect(headings).toEqual(['ui.listsTitle', 'ui.rulesTitle']);
     expect(el.shadowRoot.querySelectorAll('ok-data-table')).toHaveLength(2);
+  });
+
+  it('on a phone (cards, one scrolling page) each table keeps its title too', async () => {
+    phone = true;
+    const el = await mount();
+    const lists = el.shadowRoot.querySelector('ok-data-table[testid="pricing-table"]') as HTMLElement & { fill: boolean };
+    expect(lists.fill).toBe(false);
+    expect(headingOf(lists)?.textContent?.trim()).toBe('ui.listsTitle');
+    const rules = el.shadowRoot.querySelector('ok-data-table[testid="pricing-rules-table"]')!;
+    expect(headingOf(rules)?.textContent?.trim()).toBe('ui.rulesTitle');
   });
 
   it('when the price lists fail to load, the error sits under their title, not above it', async () => {
