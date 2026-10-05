@@ -76,8 +76,7 @@ Si falla: un código repetido en el negocio no crea nada, marca el campo Código
 tarifa con ese código. Elige otro.» y le da el foco; el código vale también para una tarifa
 retirada. Una fecha mal escrita (`YYYY-MM-DD`) se rechaza (por API). Cualquier otro error: «No se
 pudo crear la lista». Otro negocio puede usar el mismo código.
-Implicados: pendiente
-Pendiente de enlazar: taxes — TAXES-F18 (Calcular el impuesto de un importe): la base fiscal de la tarifa decide si el importe lleva el impuesto dentro; este módulo solo la declara, no calcula impuestos
+Implicados: TAXES-F18
 QA: ninguno
 
 ### PRICING-F03 Poner el precio de un artículo en una tarifa
@@ -125,8 +124,7 @@ Pasos:
 Entra: los datos de la persona. Las condiciones son un texto JSON libre.
 Sale: la regla activa y el aviso `pricing.rule.created`.
 Si falla: un código repetido en el negocio no crea nada: «Ese código ya está en uso. Elige otro.». Por el asistente, la tarjeta de confirmación dice «Una acción que esta app no sabe nombrar» (sin etiqueta de orden ni nivel de riesgo).
-Implicados: pendiente
-Pendiente de enlazar: sales — SALES-F14 (Aplicar un descuento a una línea o a la cuenta): Vender no consulta estas reglas; sus descuentos son manuales y los valida Vender, así que una regla creada aquí no cambia ningún tique
+Implicados: SALES-F14
 QA: ninguno
 
 ### PRICING-F06 Retirar una regla de descuento
@@ -168,8 +166,7 @@ el motivo solo queda en el registro del hub. Una cantidad decimal o menor que 1 
 esquema (entero, mínimo 1); un «1» pelado es una millonésima de unidad y no encaja en ningún tramo.
 La **vigencia por fechas de la tarifa no se evalúa**: una tarifa caducada o aún no vigente sigue
 dando precio mientras esté activa. La tarifa por defecto no influye en la elección.
-Implicados: pendiente
-Pendiente de enlazar: sales — SALES-F09 (Vender a precio libre por departamento): hoy el precio de la línea lo decide Inventario/Servicios o el cajero; Vender no llama a esta consulta
+Implicados: SALES-F09
 Pendiente de enlazar: customers — segmento del cliente: la consulta recibe el segmento como dato, pero Clientes no guarda una tarifa por cliente ni lo envía
 Pendiente de enlazar: services — precio de un servicio: no se consulta
 QA: ninguno
@@ -197,9 +194,7 @@ Si falla: quien llama recibe un error genérico («no se pudo completar»): el m
 No se evalúan las fechas de validez de la regla, y el alcance «categoría de artículo» no filtra
 nada (la regla se aplica como si fuera para todo). «Compra X, llévate Y» toma su cantidad y precio
 del texto de condiciones, no de las líneas.
-Implicados: pendiente
-Pendiente de enlazar: sales — SALES-F14 (Aplicar un descuento a una línea o a la cuenta): si un día Vender llamara a este cálculo, quién gana entre el descuento manual y la regla no está definido; hoy Vender no lo llama
-Pendiente de enlazar: taxes — TAXES-F18 (Calcular el impuesto de un importe): el reparto por tipo prepara la base que luego se grava
+Implicados: SALES-F14, TAXES-F18
 Pendiente de enlazar: invoice — desglose por tipo de la factura: el agregado por tipo está pensado para ese desglose, hoy no se envía
 QA: ninguno
 
