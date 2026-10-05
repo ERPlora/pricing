@@ -68,7 +68,7 @@ Pasos:
 2. Rellenar Código y Nombre (obligatorios), Divisa y Impuesto (Según el hub por defecto).
 3. Pulsar «Guardar».
 4. La tarifa aparece en la tabla.
-Entra: código, nombre, divisa, base fiscal de la persona. El segmento, la tarifa por defecto y las
+Entra: código, nombre, divisa, base fiscal de la persona. «Según el hub» no hereda nada en la práctica: el hub no le pasa su modo de impuestos al cálculo, y una tarifa así responde siempre «incluido» (ver PRICING-F07). El segmento, la tarifa por defecto y las
 fechas de validez **no** se piden en pantalla: solo se pueden fijar por el asistente o la API.
 Sale: la tarifa guardada (activa) y el aviso `pricing.price_list.created`. Si se marca como por
 defecto (solo por API), se baja la marca a la anterior en la misma operación: nunca hay dos.
@@ -94,7 +94,7 @@ Inventario o Servicios.
 Sale: la fila de precio y el aviso `pricing.price_item.added`.
 Si falla: si la tarifa no es de este negocio, no existe o está inactiva, no se escribe nada ni se
 avisa, y sale «Esa tarifa no está disponible: no existe en este negocio, o se ha borrado o
-desactivado.». No se comprueba que un tramo no se solape con otro ni que el precio sea positivo.
+desactivado.». No se comprueba que un tramo no se solape con otro ni que el precio sea positivo. Por el asistente, la tarjeta de confirmación dice «Una acción que esta app no sabe nombrar»: el módulo no trae etiqueta de la orden ni nivel de riesgo.
 Implicados: pendiente
 Pendiente de enlazar: inventory — precio del artículo: la referencia del artículo es un texto que no se valida contra el catálogo y el precio de Inventario no se sincroniza con la tarifa
 QA: ninguno
@@ -124,7 +124,7 @@ Pasos:
 4. Confirmar.
 Entra: los datos de la persona. Las condiciones son un texto JSON libre.
 Sale: la regla activa y el aviso `pricing.rule.created`.
-Si falla: un código repetido en el negocio no crea nada: «Ese código ya está en uso. Elige otro.».
+Si falla: un código repetido en el negocio no crea nada: «Ese código ya está en uso. Elige otro.». Por el asistente, la tarjeta de confirmación dice «Una acción que esta app no sabe nombrar» (sin etiqueta de orden ni nivel de riesgo).
 Implicados: pendiente
 Pendiente de enlazar: sales — SALES-F14 (Aplicar un descuento a una línea o a la cuenta): Vender no consulta estas reglas; sus descuentos son manuales y los valida Vender, así que una regla creada aquí no cambia ningún tique
 QA: ninguno
@@ -140,12 +140,12 @@ Entra: el identificador de la regla.
 Sale: la regla inactiva (no se borra; no hay forma de reactivarla) y el aviso
 `pricing.rule.deactivated`. Si la regla no existe o es de otro negocio no cambia nada, pero **el
 aviso sale igual**.
-Si falla: sin permiso de gestionar, el servidor lo rechaza.
+Si falla: sin permiso de gestionar, el servidor lo rechaza. Por el asistente, la tarjeta de confirmación dice «Una acción que esta app no sabe nombrar» (sin etiqueta de orden ni nivel de riesgo).
 Implicados: ninguno
 QA: ninguno
 
 ### PRICING-F07 Consultar el precio de un artículo
-Estado: parcial — el cálculo está hecho, pero con la documentación del módulo no queda confirmado que su respuesta llegue al llamante (sin confirmar)
+Estado: parcial — el precio llega a quien lo pide, pero sus rechazos llegan como un error genérico y la base fiscal nunca se hereda del hub
 Actor: sistema, asistente, empleado
 Pantalla: ninguna
 Pasos:
@@ -154,15 +154,18 @@ Pasos:
 2. El módulo toma las tarifas candidatas (la pedida, o todas las activas; con segmento, las de ese
    segmento y las sin segmento).
 3. Entre los precios del artículo cuyo tramo contiene la cantidad, devuelve el **más bajo**: no la
-   tarifa por defecto ni la primera.
-4. Responde precio en céntimos, tarifa, divisa, decimales de la divisa, y base fiscal con su origen
-   (la tarifa, el hub o por defecto «incluido»).
+   tarifa por defecto ni la primera. Si hay tarifas de divisas distintas, compara los números sin
+   convertir (90 USD gana a 100 EUR).
+4. Responde precio en céntimos, tarifa, divisa, decimales de la divisa, y base fiscal con su origen:
+   la de la tarifa o, si la tarifa dice «Según el hub», siempre «incluido» con origen «por defecto»
+   (el hub no le pasa su modo de impuestos: un B2B con precios netos cotizaría como bruto).
+   Es una orden, no una consulta: por el asistente pasa por la tarjeta de confirmación y por la API de órdenes.
 Entra: referencia, cantidad, tarifa o segmento; las tarifas y precios del negocio.
 Sale: solo la respuesta; no escribe nada ni avisa.
-Si falla: `no_price_list` (ninguna tarifa candidata), `no_price` (el artículo no tiene precio para
-esa cantidad), `invalid_quantity` (no es un entero positivo: un decimal se rechaza, un «1» pelado es
-una millonésima), `invalid_id`, `mixed_tax_basis` (las candidatas con precio mezclan base bruta y
-neta: hay que pedir una tarifa concreta).
+Si falla: quien llama recibe un error genérico («no se pudo completar»), sin saber si faltaba tarifa
+o precio o si las bases se mezclaban (`no_price_list`, `no_price`, `invalid_id`, `mixed_tax_basis`):
+el motivo solo queda en el registro del hub. Una cantidad decimal o menor que 1 la rechaza antes el
+esquema (entero, mínimo 1); un «1» pelado es una millonésima de unidad y no encaja en ningún tramo.
 La **vigencia por fechas de la tarifa no se evalúa**: una tarifa caducada o aún no vigente sigue
 dando precio mientras esté activa. La tarifa por defecto no influye en la elección.
 Implicados: pendiente
@@ -172,7 +175,7 @@ Pendiente de enlazar: services — precio de un servicio: no se consulta
 QA: ninguno
 
 ### PRICING-F08 Calcular el descuento de un importe y repartirlo
-Estado: parcial — el cálculo está hecho, pero con la documentación del módulo no queda confirmado que su respuesta llegue al llamante (sin confirmar), y el alcance «categoría de artículo» no se aplica
+Estado: parcial — el resultado llega a quien lo pide, pero sus rechazos llegan como un error genérico, y el alcance «categoría de artículo» no se aplica
 Actor: sistema, asistente, empleado
 Pantalla: ninguna
 Pasos:
@@ -190,7 +193,7 @@ Pasos:
 Entra: importe o líneas, reglas del negocio, segmento.
 Sale: importe original y final, descuento total, reglas aplicadas, base fiscal y, con líneas, el
 reparto por línea y por tipo. No escribe nada ni avisa.
-Si falla: `invalid_amount`, `amount_mismatch` (las líneas no suman el importe) o `mixed_tax_basis`.
+Si falla: quien llama recibe un error genérico («no se pudo completar»): el motivo (`invalid_amount`, `amount_mismatch` por líneas que no suman el importe, `mixed_tax_basis`) solo queda en el registro del hub.
 No se evalúan las fechas de validez de la regla, y el alcance «categoría de artículo» no filtra
 nada (la regla se aplica como si fuera para todo). «Compra X, llévate Y» toma su cantidad y precio
 del texto de condiciones, no de las líneas.
@@ -207,8 +210,8 @@ QA: ninguno
 | Ver listas | hecho | PRICING-F01 |
 | Precio por artículo con tramos de cantidad | parcial: sin pantalla | PRICING-F03 |
 | Reglas de descuento por prioridad (4 tipos) | parcial: ver sí, alta y baja sin pantalla | PRICING-F04 a F06 |
-| Calcular el precio de un artículo | parcial: respuesta sin confirmar; sin vigencia | PRICING-F07 |
-| Calcular y repartir un descuento a las líneas | parcial: respuesta sin confirmar; sin vigencia ni categoría | PRICING-F08 |
+| Calcular el precio de un artículo | parcial: rechazos genéricos; base del hub nunca heredada; sin vigencia | PRICING-F07 |
+| Calcular y repartir un descuento a las líneas | parcial: rechazos genéricos; sin vigencia ni categoría | PRICING-F08 |
 | Que Vender cobre el precio de la tarifa | no lo hace (módulo sin consumidor) | — |
 | Editar o borrar tarifas, precios y reglas | no lo hace | — |
 | Tarifa por cliente | no lo hace (Clientes retiró el descuento por grupo, customers#17) | — |
@@ -242,13 +245,9 @@ QA: ninguno
 ## Dudas abiertas
 - Si Vender debe llamar a este módulo, cuándo y quién gana entre un descuento manual y una regla:
   no está decidido (`market-decision`).
-- Si la respuesta de los dos cálculos ya llega al llamante: el host ignoraba el resultado de un
-  handler de solo lectura según `docs/limits.md`; sin confirmar.
 
 ## Fuentes contrastadas
 - `docs/limits.md` dice «No screen for rules»: hay tabla de reglas de solo lectura (sin alta).
-- `WASM-TODO.md` dice que `get_price`/`calculate_discount` devuelven `unsupported_readonly_handler`;
-  el código ya los implementa y el documento técnico los da por operativos (ADR-0210). Lo que sigue
-  abierto es si el host entrega el resultado (`docs/limits.md`).
+- `docs/limits.md` (líneas 5-8) y `WASM-TODO.md` dicen que la respuesta de los cálculos no llega al llamante o que devuelven `unsupported_readonly_handler`: está desfasado, el hub devuelve el resultado del manejador (hub#70) y el código ya los implementa. Lo que no llega son los códigos de rechazo.
 - El documento técnico habla de reparto y redondeo; el código no mira `valid_from`/`valid_until` ni
   `product_category` en los cálculos.
